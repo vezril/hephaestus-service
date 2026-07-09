@@ -4,7 +4,7 @@ import me.cference.hephaestus.job.{DecodedJob, ResultPublisher}
 import me.cference.hephaestus.media.{MediaError, MediaResult}
 import scalapb.json4s.JsonFormat
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 /**
  * The real §4 [[ResultPublisher]]: it fills the §3 seam, mapping the domain outcome to the Lexicon
@@ -26,8 +26,7 @@ final class HermesResultPublisher(
     processedTopic: String,
     failedTopic: String,
     mediaBucket: String
-)(using ec: ExecutionContext)
-    extends ResultPublisher:
+) extends ResultPublisher:
 
   def publish(job: DecodedJob, outcome: Either[MediaError, MediaResult]): Future[Unit] =
     outcome match
