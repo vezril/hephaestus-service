@@ -1,5 +1,6 @@
 package me.cference.hephaestus.storage
 
+import java.nio.ByteBuffer
 import java.security.MessageDigest
 
 /**
@@ -37,6 +38,15 @@ final class Md5State private (private val digest: MessageDigest):
    * Feed one chunk into the running digest. Mutates and returns `this` for fold-friendly chaining.
    */
   def update(bytes: Array[Byte]): Md5State =
+    digest.update(bytes)
+    this
+
+  /**
+   * Feed one chunk into the running digest directly from a `ByteBuffer`, hashing the bytes in place
+   * (no intermediate array copy). Consumes the buffer (advances its position, like
+   * `MessageDigest.update(ByteBuffer)`). Mutates and returns `this` for fold-friendly chaining.
+   */
+  def update(bytes: ByteBuffer): Md5State =
     digest.update(bytes)
     this
 

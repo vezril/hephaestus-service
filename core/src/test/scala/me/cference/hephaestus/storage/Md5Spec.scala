@@ -54,3 +54,20 @@ final class Md5Spec extends AnyFunSuite with Matchers:
     st.update(bytes("c"))
     st.hexDigest shouldBe Md5.hex(bytes("abc"))
   }
+
+  test("Md5State ByteBuffer update yields the same digest as the array path") {
+    val chunks = List("nio-chunk-one|", "nio-chunk-two|", "nio-chunk-three").map(bytes)
+    val viaBuffer = chunks
+      .foldLeft(Md5State.empty)((st, c) => st.update(java.nio.ByteBuffer.wrap(c)))
+      .hexDigest
+    viaBuffer shouldBe Md5.hex(chunks)
+  }
+
+  test("Md5State ByteBuffer and array updates can be interleaved to the same digest") {
+    val interleaved = Md5State.empty
+      .update(bytes("aa"))
+      .update(java.nio.ByteBuffer.wrap(bytes("bb")))
+      .update(bytes("cc"))
+      .hexDigest
+    interleaved shouldBe Md5.hex(bytes("aabbcc"))
+  }
