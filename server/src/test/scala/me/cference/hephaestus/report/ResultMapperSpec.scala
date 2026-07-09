@@ -3,7 +3,7 @@ package me.cference.hephaestus.report
 import codex.messages.v1 as pb
 import me.cference.hephaestus.job.DecodedJob
 import me.cference.hephaestus.media.*
-import org.scalatest.OptionValues
+import org.scalatest.{EitherValues, OptionValues}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scalapb.json4s.JsonFormat
@@ -13,7 +13,7 @@ import scalapb.json4s.JsonFormat
  * round-trip (`toJsonString` → `fromJsonString` → equal), plus assertions on the specific field
  * mapping (status, spec_version parse, ObjectRef bucket/object, dropped filesize, optionals).
  */
-final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues:
+final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues with EitherValues:
 
   private val bucket = "media"
   private val spec = DerivativeSpec(250, 850, 850, "3")
@@ -40,7 +40,7 @@ final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues
       "3"
     )
 
-    val processed = ResultMapper.toProcessed(job("j1"), result, bucket).toOption.get
+    val processed = ResultMapper.toProcessed(job("j1"), result, bucket).value
 
     processed.jobId shouldBe "j1"
     processed.postId shouldBe "post-j1"
@@ -79,7 +79,7 @@ final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues
       "3"
     )
 
-    val processed = ResultMapper.toProcessed(job("j2"), result, bucket).toOption.get
+    val processed = ResultMapper.toProcessed(job("j2"), result, bucket).value
 
     processed.derivatives.map(_.kind) shouldBe Seq("thumb", "sample")
     processed.derivatives.map(_.ref.value.`object`) shouldBe Seq(
@@ -109,7 +109,7 @@ final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues
       "3"
     )
 
-    val processed = ResultMapper.toProcessed(job("j3"), result, bucket).toOption.get
+    val processed = ResultMapper.toProcessed(job("j3"), result, bucket).value
 
     processed.metadata.value.durationSeconds shouldBe Some(12.5)
     processed.metadata.value.fps shouldBe Some(30.0)
