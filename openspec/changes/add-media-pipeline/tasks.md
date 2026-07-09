@@ -12,20 +12,20 @@ design at `openspec/changes/design-hephaestus/{design.md,specs/media-processing/
 
 ## 1. Pure core: types, mapping, tool args
 
-- [ ] 1.1 **Red/Green**: `MediaType` ADT (`Image`|`Animated`|`Video`) + total mapping from
+- [x] 1.1 **Red/Green**: `MediaType` ADT (`Image`|`Animated`|`Video`) + total mapping from
       `contentType`/declared `mediaType`; unknown ⇒ `Left(Unsupported)` (edge cases).
-- [ ] 1.2 **Red/Green**: pure derivative plan — given `MediaType` + `want` + source dimensions,
+- [x] 1.2 **Red/Green**: pure derivative plan — given `MediaType` + `want` + source dimensions,
       produce the list of outputs to generate (thumb always; sample only if larger than the sample
       dim; video adds poster + 720p) with their content-addressed names (edge: small image skips sample).
-- [ ] 1.3 **Red/Green**: pure `vips`/`ffmpeg`/`ffprobe` **arg-list builders** (input path, output
+- [x] 1.3 **Red/Green**: pure `vips`/`ffmpeg`/`ffprobe` **arg-list builders** (input path, output
       path, dimensions, transcode params) — assert exact argv for each output; no shell string interp.
 
 ## 2. Perceptual hash (`core`, pure)
 
-- [ ] 2.1 **Red**: DCT-based 64-bit pHash over a small grayscale raster — known-vector hashes;
+- [x] 2.1 **Red**: DCT-based 64-bit pHash over a small grayscale raster — known-vector hashes;
       identical rasters ⇒ identical hash; a 1px shift ⇒ small Hamming distance; hash is stable
       (deterministic) (edge cases).
-- [ ] 2.2 **Green**: pure pHash (grayscale downscale → DCT → median threshold → 64-bit); a lowercase
+- [x] 2.2 **Green**: pure pHash (grayscale downscale → DCT → median threshold → 64-bit); a lowercase
       hex/`Long` representation matching what Artemis stores.
 
 ## 3. Media tools integration (`server` shell)
