@@ -31,6 +31,12 @@ final class SpecVersionSpec extends AnyFunSuite with Matchers:
     SpecVersion.parse(null).isLeft shouldBe true
   }
 
+  test("a zero or negative version is rejected (must be >= 1)") {
+    SpecVersion.parse("0").isLeft shouldBe true
+    SpecVersion.parse("-1").isLeft shouldBe true
+    SpecVersion.parse("-42").isLeft shouldBe true
+  }
+
   test("the error names the offending value") {
     SpecVersion.parse("v1") match
       case Left(SpecVersionError(message)) => message should include("v1")
