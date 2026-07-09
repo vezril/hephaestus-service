@@ -35,8 +35,10 @@ trait MetricsRecorder:
       try f
       catch { case NonFatal(e) => Future.failed(e) }
     fut.andThen { case _ =>
-      observeSeconds(lane, (System.nanoTime() - start).toDouble / 1.0e9)
+      // Clear the in-flight mark FIRST: were observeSeconds ever to throw, a dec-after-observe order
+      // would leak the gauge. Decoupling them keeps jobs_inflight correct unconditionally.
       inflightDec()
+      observeSeconds(lane, (System.nanoTime() - start).toDouble / 1.0e9)
     }
 
 object MetricsRecorder:
