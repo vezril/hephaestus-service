@@ -174,18 +174,46 @@ final class JobConsumerSpec
       val publisher = new CapturingResultPublisher(events)
       val decoder = new Decoder
       decoder.table("job-t") = Right(imageJob("job-t", "kt"))
-      source.offer(Lane.Ingest, envelope("job-t"))
+      // A "seal" message (undecodable ⇒ AckOnly ⇒ acked, no Apollo read) is a DETERMINISTIC marker
+      // that the loop has moved PAST the transient job. Processed strictly after it (batch=1,
+      // concurrency=1), so once "ack-seal" appears, job-t is fully handled and provably unacked.
+      source.offer(Lane.Ingest, envelope("job-t"), Envelope("ack-seal", "seal"))
+      val sequential =
+        JobConsumer.Settings(batchSize = 1, concurrency = 1, pollInterval = 40.millis)
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, sequential)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain("ack-seal"))
+      consumer.drain().futureValue
+
+      source.acked shouldBe Seq("ack-seal") // job-t never acked
+      publisher.published shouldBe empty // neither published (transient + decode-fail)
+    }
+
+    "survive a MessageSource that throws synchronously on ack, and keep serving the lane" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "kboom")
+      seedImage(apollo, "kok")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      // The seam throws synchronously when acking "ack-boom" (before any .recover attaches).
+      val source = new FakeMessageSource(events, throwAckFor = Set("ack-boom"))
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("boom") = Right(imageJob("job-boom", "kboom"))
+      decoder.table("ok") = Right(imageJob("job-ok", "kok"))
+      source.offer(Lane.Ingest, Envelope("ack-boom", "boom"), Envelope("ack-ok", "ok"))
 
       val consumer =
         new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
       consumer.start()
-      // Wait until the job has been pulled + decoded, then confirm it settles UNacked.
-      eventually(decoder.calls.get should be >= 1)
-      Thread.sleep(250)
+      // Despite the synchronous throw on job-boom's ack, the loop must survive and still ack job-ok.
+      eventually(source.acked should contain("ack-ok"))
       consumer.drain().futureValue
 
-      source.acked shouldBe empty
-      publisher.published shouldBe empty
+      source.acked should not contain "ack-boom" // its ack threw ⇒ never recorded
+      publisher.published.map(_._1.jobId) should contain("job-ok")
     }
   }
 
