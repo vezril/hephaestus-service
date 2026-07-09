@@ -27,8 +27,6 @@ final class MediaPipelineSpec
   implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(timeout = Span(10, Seconds), interval = Span(1, Seconds))
 
-  private given ec: scala.concurrent.ExecutionContext = system.executionContext
-
   private val bucket = "media"
   private val spec = DerivativeSpec(250, 850, 850, "v1")
   private val allWant = DerivativeKind.values.toSet

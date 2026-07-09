@@ -19,7 +19,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpecLike
 
-import java.nio.file.{Files, Path}
+import java.nio.file.Files
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 

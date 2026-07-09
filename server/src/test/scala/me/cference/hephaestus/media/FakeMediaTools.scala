@@ -2,7 +2,7 @@ package me.cference.hephaestus.media
 
 import java.nio.file.{Files, Path}
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 /**
  * A recording fake [[MediaTools]] for orchestration tests: it records every call (with its salient
@@ -20,8 +20,7 @@ final class FakeMediaTools(
       IArray.fill(PerceptualHash.RasterSize * PerceptualHash.RasterSize)(120)
     ),
     failOn: Set[String] = Set.empty
-)(using ec: ExecutionContext)
-    extends MediaTools:
+) extends MediaTools:
 
   val calls: mutable.ArrayBuffer[String] = mutable.ArrayBuffer.empty
 
