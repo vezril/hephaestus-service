@@ -22,6 +22,10 @@ final class PrometheusMetricsRecorder(registry: CollectorRegistry) extends Metri
     .build()
     .name("job_processing_seconds")
     .help("Media job processing duration in seconds, by lane.")
+    // Explicit buckets spanning a media worker's real range: CPU-heavy ffmpeg/vips transcodes
+    // routinely take tens of seconds to minutes, so the default top bucket (10s) would dump every
+    // slow job into +Inf and make p95/p99 above 10s unrecoverable. Span 0.1s .. 5min instead.
+    .buckets(0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
     .labelNames("lane")
     .register(registry)
 

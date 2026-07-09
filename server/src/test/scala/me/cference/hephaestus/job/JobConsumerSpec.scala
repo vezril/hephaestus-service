@@ -336,6 +336,34 @@ final class JobConsumerSpec
       recorder.outcomes should contain(("ingest", "terminal"))
       recorder.outcomes should contain(("ingest", "retriable"))
     }
+
+    "record a retriable outcome from the handler's recover path when a seam fails" in {
+      // A job whose ack throws SYNCHRONOUSLY makes `handle`'s work-Future fail, so the recover
+      // branch runs (leaving the message unacked, exactly like a retriable) — and must count it as
+      // retriable, so the processed count is a property of the consumer, not of the pipeline.
+      val recorder = new RecordingRecorder
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "krec")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events, throwAckFor = Set("ack-job-rec"))
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("job-rec") = Right(imageJob("job-rec", "krec"))
+      source.offer(Lane.Ingest, envelope("job-rec"))
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings, recorder)(using
+          system,
+          ec
+        )
+      consumer.start()
+      // The ack throws ⇒ never recorded; wait until the publish (which precedes ack) has happened.
+      eventually(publisher.published.map(_._1.jobId) should contain("job-rec"))
+      consumer.drain().futureValue
+
+      source.acked should not contain "ack-job-rec"
+      recorder.outcomes should contain(("ingest", "retriable")) // recorded on the recover path
+    }
   }
 
   "the consumer — graceful drain" should {
