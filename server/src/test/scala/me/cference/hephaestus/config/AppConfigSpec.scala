@@ -63,6 +63,38 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
       case Left(err) => fail(s"expected override to load, got $err")
   }
 
+  test("a non-numeric spec-version fails fast at config load, naming the key") {
+    // An operator setting DERIVATIVE_SPEC_VERSION=v2 (the old default was literally "v1") must fail
+    // AT STARTUP — never start healthy and then poison the queue by failing every publish.
+    val badVersion = ConfigFactory
+      .parseString(
+        """
+          |DERIVATIVE_SPEC_VERSION = "v2"
+          |""".stripMargin
+      )
+      .withFallback(ConfigFactory.parseResources("application.conf"))
+      .resolve()
+
+    AppConfig.load(badVersion) match
+      case Left(ConfigError(message)) => message should include("spec-version")
+      case Right(cfg) => fail(s"expected failure, got $cfg")
+  }
+
+  test("a zero/negative spec-version fails fast at config load") {
+    val zeroVersion = ConfigFactory
+      .parseString(
+        """
+          |DERIVATIVE_SPEC_VERSION = "0"
+          |""".stripMargin
+      )
+      .withFallback(ConfigFactory.parseResources("application.conf"))
+      .resolve()
+
+    AppConfig.load(zeroVersion) match
+      case Left(ConfigError(message)) => message should include("spec-version")
+      case Right(cfg) => fail(s"expected failure, got $cfg")
+  }
+
   test("apollo endpoint host:port splits on the last colon") {
     ApolloConfig.splitHostPort("apollostorage:8443") shouldBe ("apollostorage", 8443)
     ApolloConfig.splitHostPort("apollo.prod:9443") shouldBe ("apollo.prod", 9443)
