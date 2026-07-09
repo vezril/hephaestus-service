@@ -49,6 +49,7 @@ lazy val pekkoHttpVersion = "1.2.0"
 lazy val pekkoGrpcVersion = "1.1.1"
 lazy val scalaTestVersion = "3.2.19"
 lazy val logbackVersion = "1.5.16"
+lazy val logstashEncoderVersion = "8.0"
 
 // The Apollo gRPC contract is consumed as the published Lexicon stubs, not a local .proto
 // (add-apollo-io). GitHub Packages requires auth even for public reads: use a read:packages
@@ -124,6 +125,9 @@ lazy val server = (project in file("server"))
       // (it is otherwise pulled transitively at a possibly-mismatched version).
       "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
+      // Structured JSON log encoding (LogstashEncoder) for the constellation observability stack
+      // (add-structured-logging). Selected at runtime by LOG_FORMAT (see server logback.xml).
+      "net.logstash.logback" % "logstash-logback-encoder" % logstashEncoderVersion,
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
       "org.apache.pekko" %% "pekko-http-testkit" % pekkoHttpVersion % Test,
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test
@@ -147,7 +151,9 @@ lazy val server = (project in file("server"))
         .getOrElse("calvinference")
     ),
     Docker / version := version.value.replace('+', '-'),
-    dockerEnvVars := Map("HTTP_PORT" -> "8080"),
+    // Shipped image logs structured JSON (LOG_FORMAT=json); local `sbt run` (no override) stays
+    // human-readable text — see server/src/main/resources/logback.xml (add-structured-logging).
+    dockerEnvVars := Map("HTTP_PORT" -> "8080", "LOG_FORMAT" -> "json"),
     // Non-root daemon user (design: process must not run as root).
     Docker / daemonUserUid := Some("1001"),
     Docker / daemonUser := "hephaestus",
