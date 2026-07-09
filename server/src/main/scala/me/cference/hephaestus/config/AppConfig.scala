@@ -1,6 +1,7 @@
 package me.cference.hephaestus.config
 
 import com.typesafe.config.{Config, ConfigException}
+import me.cference.hephaestus.media.SpecVersion
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -127,6 +128,11 @@ object AppConfig:
       thumb <- requiredInt(c, s"$Root.derivatives.thumbnail-px")
       sample <- requiredInt(c, s"$Root.derivatives.sample-px")
       version <- requiredString(c, s"$Root.derivatives.spec-version")
+      // Validate NUMERICALLY at load (it is published as the proto MediaProcessed.spec_version
+      // int32): a bad value must fail fast at startup, not become a per-job publish poison that
+      // §3 treats as retriable and redelivers forever. The value is still carried as a String
+      // (it stamps content-addressed derivative keys); the mapper re-parses it defensively.
+      _ <- SpecVersion.parse(version).left.map(e => ConfigError(e.message))
     yield DerivativeConfig(thumb, sample, version)
 
   private def thresholdConfig(c: Config): Either[ConfigError, ThresholdConfig] =
