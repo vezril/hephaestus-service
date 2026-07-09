@@ -27,7 +27,13 @@ trait ApolloClient:
    * Server-stream an original: yields its `ObjectMetadata` header, then a backpressured
    * `Source[ByteString]` of the payload whose bytes are md5-verified against the header while
    * streaming. A mismatch or a truncated stream fails the byte source with a terminal
-   * [[ApolloError]]. A `NOT_FOUND`/unreachable failure surfaces from the returned `Future`.
+   * [[ApolloError]]. A `NOT_FOUND`/unreachable failure surfaces from the returned `Future`; a
+   * mid-stream failure surfaces (typed and classified) from the payload `Source`.
+   *
+   * IMPORTANT — consume atomically: because the md5 is only known at end-of-stream, a terminal
+   * `Md5Mismatch`/`Truncated` can arrive AFTER bytes have already flowed. The pipeline MUST NOT
+   * commit anything derived from a read (e.g. a written derivative) until this `Source` has
+   * completed successfully.
    */
   def readOriginal(
       bucket: String,
