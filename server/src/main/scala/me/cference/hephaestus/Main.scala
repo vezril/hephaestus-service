@@ -4,13 +4,14 @@ import me.cference.hephaestus.apollo.ApolloClient
 import me.cference.hephaestus.build.BuildInfo
 import me.cference.hephaestus.config.{AppConfig, ConfigError}
 import me.cference.hephaestus.http.{HealthRoutes, HttpServer}
-import me.cference.hephaestus.job.{HermesMessageSource, JobCodec, JobConsumer, ResultPublisher}
+import me.cference.hephaestus.job.{HermesMessageSource, JobCodec, JobConsumer}
 import me.cference.hephaestus.media.{
   DerivativeSpec,
   MediaPipeline,
   ProcessCommandRunner,
   RealMediaTools
 }
+import me.cference.hephaestus.report.{HermesResultPublisher, HermesResultSink}
 import com.typesafe.config.ConfigFactory
 import me.cference.hermesmq.client.HermesClient
 import org.apache.pekko.actor.CoordinatedShutdown
@@ -127,6 +128,15 @@ object Main:
     val pipeline = MediaPipeline(apollo, tools)(using system)
 
     val client = new HermesClient(hermesBaseUri(cfg.hermes.endpoint))(using system)
+    // The real §4 result publisher: map the outcome → MediaProcessed/MediaFailed and publish to the
+    // configured result topics via the same HermesClient (a transient publish failure leaves the
+    // job unacked for redelivery, so readiness is unaffected).
+    val publisher = new HermesResultPublisher(
+      sink = new HermesResultSink(client)(using mediaEc),
+      processedTopic = cfg.hermes.processedTopic,
+      failedTopic = cfg.hermes.failedTopic,
+      mediaBucket = cfg.apollo.mediaBucket
+    )(using mediaEc)
     HermesMessageSource(client, cfg.hermes.ingestLane, cfg.hermes.reprocessLane)(using
       mediaEc
     ) match
@@ -136,7 +146,7 @@ object Main:
         val consumer = new JobConsumer(
           source = source,
           pipeline = pipeline,
-          publisher = ResultPublisher.logging,
+          publisher = publisher,
           decode = JobCodec.decode(_, spec),
           settings = JobConsumer.Settings(
             batchSize = cfg.consumer.batchSize,
@@ -146,10 +156,12 @@ object Main:
         )(using system, mediaEc)
         consumer.start()
         log.info(
-          "Job consumer wired — Hermes {} (lanes {} → {})",
+          "Job consumer wired — Hermes {} (lanes {} → {}; results → {}/{})",
           cfg.hermes.endpoint,
           cfg.hermes.ingestLane,
-          cfg.hermes.reprocessLane
+          cfg.hermes.reprocessLane,
+          cfg.hermes.processedTopic,
+          cfg.hermes.failedTopic
         )
         CoordinatedShutdown(system).addTask(
           CoordinatedShutdown.PhaseServiceRequestsDone,
