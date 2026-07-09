@@ -39,4 +39,19 @@ final class PrometheusMetricsRecorderSpec extends AnyWordSpec with Matchers:
       out should include("""jobs_processed_total{lane="ingest",outcome="terminal",} 1.0""")
       out should include("""jobs_processed_total{lane="ingest",outcome="retriable",} 1.0""")
     }
+
+    "use media-worker duration buckets spanning tens of seconds to minutes" in {
+      // The histogram must NOT use the Prometheus default buckets (top 10s): a 90s transcode has to
+      // land in a real bucket, not only +Inf, or p95/p99 above 10s are unrecoverable.
+      val m = new MetricsRegistry("v", () => true)
+      val rec = new PrometheusMetricsRecorder(m.registry)
+      rec.observeSeconds("reprocess", 90.0) // a slow-but-typical transcode
+      val out = m.scrape()
+      // Explicit high buckets are present …
+      out should include("""job_processing_seconds_bucket{lane="reprocess",le="30.0",} 0.0""")
+      out should include("""job_processing_seconds_bucket{lane="reprocess",le="120.0",} 1.0""")
+      out should include("""job_processing_seconds_bucket{lane="reprocess",le="300.0",} 1.0""")
+      // … and a 90s observation is captured below +Inf (i.e. not lost to the top bucket).
+      out should include("""job_processing_seconds_bucket{lane="reprocess",le="60.0",} 0.0""")
+    }
   }

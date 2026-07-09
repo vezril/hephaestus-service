@@ -151,6 +151,11 @@ final class JobConsumer(
       work.recover { case NonFatal(e) =>
         // Any failure (publish/ack error, or a synchronous seam throw) leaves the message unacked so
         // it is redelivered — and, crucially, never propagates out to break the batch or the lane.
+        // Count it as "retriable": this branch behaves exactly like a retriable outcome (unacked,
+        // redelivered), so the label is ack-consistent, and recording HERE makes the processed count
+        // a property of the consumer rather than an invariant of MediaPipeline never failing its
+        // Future (it funnels throwables into Left today, but the guarantee shouldn't live there).
+        recorder.recordProcessed(laneLabel, "retriable")
         log.error(s"Handler error on $lane (ackId ${env.ackId}) — leaving unacked", e)
         ()
       }
