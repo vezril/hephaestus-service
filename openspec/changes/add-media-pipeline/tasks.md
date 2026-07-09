@@ -30,42 +30,42 @@ design at `openspec/changes/design-hephaestus/{design.md,specs/media-processing/
 
 ## 3. Media tools integration (`server` shell)
 
-- [ ] 3.1 **Red**: `MediaTools` interface (probe/thumbnail/sample/poster/transcode/raster-for-phash)
+- [x] 3.1 **Red**: `MediaTools` interface (probe/thumbnail/sample/poster/transcode/raster-for-phash)
       with a **fake** impl — orchestration tests assert the right calls + args without real binaries.
-- [ ] 3.2 **Green**: real `MediaTools` shelling to `vips`/`ffmpeg`/`ffprobe` via the injectable
+- [x] 3.2 **Green**: real `MediaTools` shelling to `vips`/`ffmpeg`/`ffprobe` via the injectable
       runner; parse `ffprobe` JSON → `duration`/`fps`/`hasAudio`; capture nonzero-exit/stderr as a
       typed processing error (classify terminal vs retriable).
-- [ ] 3.3 **Red/Green**: temp scratch staging — write the read `Source[ByteString]` to a temp file,
+- [x] 3.3 **Red/Green**: temp scratch staging — write the read `Source[ByteString]` to a temp file,
       run tools, read derivative files back as `Source[ByteString]`; **cleanup on success AND
       failure** (edge: cleanup runs even when a tool fails).
 
 ## 4. Pipeline orchestration (`server`)
 
-- [ ] 4.1 **Red**: image pipeline — large image ⇒ thumb + sample + dimensions + phash; small image ⇒
+- [x] 4.1 **Red**: image pipeline — large image ⇒ thumb + sample + dimensions + phash; small image ⇒
       thumb only (no sample); output derivatives carry correct content-addressed keys (edge cases).
-- [ ] 4.2 **Green**: image path (read+verify via §1 → stage → vips thumb/sample → phash → write via §1).
-- [ ] 4.3 **Red**: video pipeline — poster-frame thumb + sample poster + **eager 720p h264 mp4**;
+- [x] 4.2 **Green**: image path (read+verify via §1 → stage → vips thumb/sample → phash → write via §1).
+- [x] 4.3 **Red**: video pipeline — poster-frame thumb + sample poster + **eager 720p h264 mp4**;
       metadata has duration/fps/hasAudio; phash from a poster raster (edge: no audio track ⇒ hasAudio=false).
-- [ ] 4.4 **Green**: video path (ffmpeg poster + transcode, ffprobe metadata).
-- [ ] 4.5 **Red/Green**: animated path — poster + sample (transcode deferred/optional).
-- [ ] 4.6 **Red**: `MediaResult` assembly — metadata + phash + derivative refs (kind/ref/dims/variant)
+- [x] 4.4 **Green**: video path (ffmpeg poster + transcode, ffprobe metadata).
+- [x] 4.5 **Red/Green**: animated path — poster + sample (transcode deferred/optional).
+- [x] 4.6 **Red**: `MediaResult` assembly — metadata + phash + derivative refs (kind/ref/dims/variant)
       + `derivativeSpecVersion` stamped; matches the §4 `MediaProcessed` shape (edge cases).
-- [ ] 4.7 **Green**: assemble and return `MediaResult`.
+- [x] 4.7 **Green**: assemble and return `MediaResult`.
 
 ## 5. Failure classification
 
-- [ ] 5.1 **Red**: corrupt/unsupported input ⇒ **terminal** `MediaError` (retriable=false), no
+- [x] 5.1 **Red**: corrupt/unsupported input ⇒ **terminal** `MediaError` (retriable=false), no
       derivatives written; md5 mismatch on read ⇒ terminal (reuses §1); a tool crash on valid input
       vs a transient Apollo error ⇒ correct terminal/retriable split (edge cases).
-- [ ] 5.2 **Green**: typed `MediaError` ADT with `retriable`; map tool nonzero-exit/parse failures
+- [x] 5.2 **Green**: typed `MediaError` ADT with `retriable`; map tool nonzero-exit/parse failures
       (terminal) vs Apollo `ApolloError.retriable` (passed through).
 
 ## 6. Integration + CI tooling
 
-- [ ] 6.1 CI: add `apt-get install -y ffmpeg libvips-tools` to the `Compile & test` job so real-tool
+- [x] 6.1 CI: add `apt-get install -y ffmpeg libvips-tools` to the `Compile & test` job so real-tool
       integration tests run in CI (not just fake-based unit tests). Cache/pin as needed.
-- [ ] 6.2 **Test** (real tools): end-to-end with tiny fixtures through a mock/in-process Apollo —
+- [x] 6.2 **Test** (real tools): end-to-end with tiny fixtures through a mock/in-process Apollo —
       a real jpeg → thumb+sample webp written at `derivatives/<md5[0:2]>/<md5>/…`, dimensions+phash
       correct; a real short mp4 → poster + 720p transcode, duration/fps/hasAudio correct.
-- [ ] 6.3 Refactor: extract the pipeline module; unit (core + fakes) green locally, real-tool suite
+- [x] 6.3 Refactor: extract the pipeline module; unit (core + fakes) green locally, real-tool suite
       green in CI; scalafmt/scalafix clean.
