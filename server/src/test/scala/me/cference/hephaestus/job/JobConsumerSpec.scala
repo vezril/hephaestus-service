@@ -11,7 +11,7 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.mutable
 import scala.concurrent.duration.*
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Promise}
 
 /**
  * Loop tests for the two-lane priority consumer with the in-memory [[FakeMessageSource]] +
