@@ -41,6 +41,13 @@ jobs:
         with:
           fetch-depth: 0 # sbt-dynver needs full history + tags
       - uses: ./.github/actions/setup-scala
+      # The media pipeline's real-tool integration tests shell out to ffmpeg/ffprobe
+      # (video) and vips/vipsheader (images, pHash raster). Install both so those tests
+      # run in CI rather than only the fake-based orchestration tests (add-media-pipeline).
+      - name: Install media toolchain (ffmpeg + libvips)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg libvips-tools
       - name: Compile
         run: sbt -batch compile Test/compile
       - name: Test
