@@ -136,7 +136,7 @@ object Main:
       processedTopic = cfg.hermes.processedTopic,
       failedTopic = cfg.hermes.failedTopic,
       mediaBucket = cfg.apollo.mediaBucket
-    )(using mediaEc)
+    )
     HermesMessageSource(client, cfg.hermes.ingestLane, cfg.hermes.reprocessLane)(using
       mediaEc
     ) match

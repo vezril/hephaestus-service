@@ -10,8 +10,6 @@ import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
 import scalapb.json4s.JsonFormat
 
-import scala.concurrent.ExecutionContext
-
 /**
  * Behavioural tests for the real publisher over a fake [[ResultSink]]: a success publishes a
  * well-formed `MediaProcessed` to the processed topic with `jobId`/`postId` attributes, a terminal
@@ -24,8 +22,6 @@ final class HermesResultPublisherSpec
     with Matchers
     with ScalaFutures
     with OptionValues:
-
-  private given ec: ExecutionContext = ExecutionContext.global
 
   implicit override val patienceConfig: PatienceConfig =
     PatienceConfig(timeout = Span(5, Seconds), interval = Span(20, Millis))
