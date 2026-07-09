@@ -16,8 +16,10 @@ concurrency:
 permissions:
   contents: read
 
-# read:packages token for resolving the Lexicon gRPC stubs from GitHub Packages
-# (add-apollo-io). sbt reads LEXICON_TOKEN in build.sbt's credentials block.
+# read:packages token for resolving the shared GitHub Packages artifacts: the Lexicon
+# gRPC stubs + async messages (io.codex, add-apollo-io / add-job-consumption) AND the
+# HermesMQ client (me.cference.hermesmq, add-job-consumption). Both live on
+# maven.pkg.github.com; sbt reads LEXICON_TOKEN in build.sbt's credentials block.
 env:
   LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
 
