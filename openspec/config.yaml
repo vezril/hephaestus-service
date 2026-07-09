@@ -1,0 +1,28 @@
+schema: spec-driven
+
+context: |
+  Hephaestus — the forge: the media-worker service of the Codex constellation. A stateless
+  Scala 3 + Apache Pekko worker (NOT event-sourced — it processes jobs; no aggregate state,
+  no journal; idempotency comes from content-addressing + jobId, durability from HermesMQ).
+
+  Job: consume ProcessMediaJob from HermesMQ, read the original from Apollo (gRPC), generate
+  derivatives — thumbnails/samples (libvips), video poster + eager 720p h264 transcode
+  (ffmpeg), a perceptual hash, and extracted metadata — write them content-addressed back to
+  Apollo, and publish MediaProcessed/MediaFailed. Also drains a lower-priority media.reprocess
+  lane (see design-artemis-reprocessing) and stamps a derivativeSpecVersion.
+
+  The shared message + storage contract lives in `design-hephaestus-contract` (codex) — later
+  the message types come from Lexicon. This repo specs the worker INTERNALS.
+
+  CPU-heavy (software transcode/image processing, no GPU) → pinned to the beefiest laptop.
+  Docker image bundles ffmpeg + libvips. Own image → Docker Hub, deployed by Codex.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
