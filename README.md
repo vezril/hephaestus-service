@@ -52,6 +52,21 @@ sbt server/Docker/publishLocal
 The build version is derived from git tags via sbt-dynver (no version literal is committed).
 Tag a release commit `vX.Y.Z` for a clean version; untagged commits get a snapshot version.
 
+### End-to-end tests (opt-in)
+
+The `E2E`-tagged suite (`server/.../e2e/MediaWorkerE2ESpec`) runs the real worker against the
+**published Apollo + Hermes images** via [testcontainers](https://testcontainers.com/) — it is
+excluded from the default `sbt test` and requires a Docker daemon plus `ffmpeg`/`libvips-tools` on
+`PATH`. Run it explicitly with `-De2e=true`:
+
+```bash
+# Boots calvinference/apollostorage + calvinference/hermesmq (+ their Postgres) as containers.
+sbt -De2e=true "server/testOnly me.cference.hephaestus.e2e.MediaWorkerE2ESpec"
+```
+
+CI runs it via the dedicated `e2e.yml` workflow (`workflow_dispatch` + nightly `schedule`), not the
+fast PR checks. A `docker-compose.e2e.yml` is provided for bringing the same stack up by hand.
+
 ## Configuration
 
 Every operational value is loaded from HOCON (`server/src/main/resources/application.conf`) with an

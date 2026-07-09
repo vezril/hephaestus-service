@@ -1,0 +1,69 @@
+# Local end-to-end stack (add-e2e-integration): the published Apollo + Hermes images and their
+# Postgres, mirroring what the testcontainers harness (server/.../e2e/ConstellationContainers)
+# starts programmatically. Handy for poking the brokers by hand while iterating on the E2E suite.
+#
+#   docker compose -f docker-compose.e2e.yml up
+#   curl localhost:8080/health        # Apollo -> {"status":"UP",...}
+#   curl localhost:9080/health/ready  # Hermes -> 200
+#
+# The automated `sbt -De2e=true server/testOnly ...MediaWorkerE2ESpec` does NOT use this file — it
+# manages its own containers on ephemeral ports. This is purely a manual convenience.
+services:
+  apollo-pg:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: apollostorage
+      POSTGRES_USER: apollostorage
+      POSTGRES_PASSWORD: apollostorage
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apollostorage -d apollostorage"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  apollostorage:
+    image: calvinference/apollostorage:latest
+    depends_on:
+      apollo-pg:
+        condition: service_healthy
+    environment:
+      HTTP_PORT: "8080"
+      GRPC_PORT: "8443"
+      POSTGRES_HOST: apollo-pg
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: apollostorage
+      POSTGRES_USER: apollostorage
+      POSTGRES_PASSWORD: apollostorage
+      # Single-node: bootstrap a cluster of one (host/contact-point stay at the image default).
+      CLUSTER_MIN_MEMBERS: "1"
+    ports:
+      - "8080:8080" # HTTP health
+      - "8443:8443" # gRPC object API (h2c)
+
+  hermes-pg:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hermesmq
+      POSTGRES_USER: hermes
+      POSTGRES_PASSWORD: hermes
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hermes -d hermesmq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hermesmq:
+    image: calvinference/hermesmq:latest
+    depends_on:
+      hermes-pg:
+        condition: service_healthy
+    environment:
+      HERMESMQ_HTTP_PORT: "8080"
+      HERMESMQ_DB_HOST: hermes-pg
+      HERMESMQ_DB_PORT: "5432"
+      HERMESMQ_DB_NAME: hermesmq
+      HERMESMQ_DB_USER: hermes
+      HERMESMQ_DB_PASSWORD: hermes
+      # Self-seeds a one-node cluster (127.0.0.1:25520) and self-migrates its schema on start.
+    ports:
+      - "9080:8080" # HTTP REST + health (9080 avoids clashing with Apollo's 8080)
