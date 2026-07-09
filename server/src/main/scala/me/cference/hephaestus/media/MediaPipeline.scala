@@ -13,7 +13,7 @@ import java.nio.file.{Files, Path, Paths}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.*
 import scala.util.control.NonFatal
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try, Using}
 
 /**
  * The forge. `process(descriptor)` turns an original into a [[MediaResult]] (or a terminal
@@ -38,18 +38,23 @@ final class MediaPipeline(
         // Terminal before any tool (or even any Apollo read) runs.
         Future.successful(Left(MediaError.UnsupportedType(unsupported.detail)))
       case Right(mediaType) =>
-        val scratch = Files.createTempDirectory(scratchRoot, "heph-")
-        val work =
-          try
-            stageOriginal(descriptor, scratch).flatMap { case (meta, staged) =>
-              forge(mediaType, descriptor, meta, staged, scratch)
+        // Create the scratch dir inside the effect boundary so a scratch-root failure yields a
+        // Left rather than throwing synchronously out of `process`.
+        Future.fromTry(Try(Files.createTempDirectory(scratchRoot, "heph-"))).transformWith {
+          case Failure(error) => Future.successful(Left(toMediaError(error)))
+          case Success(scratch) =>
+            val work =
+              try
+                stageOriginal(descriptor, scratch).flatMap { case (meta, staged) =>
+                  forge(mediaType, descriptor, meta, staged, scratch)
+                }
+              catch { case NonFatal(e) => Future.failed(e) }
+            work.transformWith { outcome =>
+              deleteRecursively(scratch)
+              outcome match
+                case Success(result) => Future.successful(Right(result))
+                case Failure(error) => Future.successful(Left(toMediaError(error)))
             }
-          catch { case NonFatal(e) => Future.failed(e) }
-        work.transformWith { outcome =>
-          deleteRecursively(scratch)
-          outcome match
-            case Success(result) => Future.successful(Right(result))
-            case Failure(error) => Future.successful(Left(toMediaError(error)))
         }
 
   // --- staging ---------------------------------------------------------------
@@ -237,12 +242,15 @@ final class MediaPipeline(
   private def deleteRecursively(dir: Path): Unit =
     try
       if Files.exists(dir) then
-        Files
-          .walk(dir)
-          .sorted(java.util.Comparator.reverseOrder())
-          .iterator()
-          .asScala
-          .foreach(p => Files.deleteIfExists(p))
+        // Using.resource closes the walk's directory handle (a lazy Stream over an open fd) — it
+        // would otherwise leak one fd per job.
+        Using.resource(Files.walk(dir)) { walk =>
+          walk
+            .sorted(java.util.Comparator.reverseOrder())
+            .iterator()
+            .asScala
+            .foreach(p => Files.deleteIfExists(p))
+        }
     catch { case NonFatal(_) => () }
 
 object MediaPipeline:

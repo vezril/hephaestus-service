@@ -37,16 +37,23 @@ final class RealMediaTools(runner: CommandRunner)(using ec: ExecutionContext) ex
     exec("ffmpeg", ToolArgs.ffmpegTranscode720p(input.toString, output.toString)).map(_ => ())
 
   def grayscaleRaster(input: Path, size: Int): Future[GrayscaleRaster] =
-    val forced = Files.createTempFile("heph-phash-", ".png")
-    val gray = Files.createTempFile("heph-phash-", ".pgm")
+    // Intermediates live beside `input` (inside the job's scratch dir) so they honor the pipeline's
+    // scratch discipline and are swept by its recursive cleanup as well as the explicit delete here.
+    val forced = input.resolveSibling("phash-forced.png")
+    val bw = input.resolveSibling("phash-bw.png")
+    val gray = input.resolveSibling("phash.pgm")
     val work =
       for
         _ <- exec("vips", ToolArgs.vipsForceSize(input.toString, forced.toString, size))
-        _ <- exec("vips", ToolArgs.vipsColourspaceBW(forced.toString, gray.toString))
+        _ <- exec("vips", ToolArgs.vipsColourspaceBW(forced.toString, bw.toString))
+        // Drop any alpha band: an RGBA source greyscales to grey+alpha, which the single-band PGM
+        // save rejects — so without this every transparent PNG would fail terminally.
+        _ <- exec("vips", ToolArgs.vipsExtractBand(bw.toString, gray.toString, 0, 1))
         raster <- Future.fromTry(scala.util.Try(readPgm(gray, size)))
       yield raster
     work.andThen { case _ =>
       Files.deleteIfExists(forced)
+      Files.deleteIfExists(bw)
       Files.deleteIfExists(gray)
     }
 
