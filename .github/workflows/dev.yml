@@ -21,6 +21,8 @@ permissions:
 
 env:
   IMAGE_NAME: hephaestus
+  # read:packages token for resolving the Lexicon gRPC stubs (add-apollo-io).
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
 
 jobs:
   dev-publish:
