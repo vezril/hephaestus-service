@@ -19,42 +19,44 @@ the exact env/ports; read the §1 `ApolloClient`, §3 `JobConsumer`/`HermesClien
 
 ## 1. Build + tier gating
 
-- [ ] 1.1 Add `com.dimafeng %% testcontainers-scala-scalatest` (+ testcontainers `postgresql`/generic
+- [x] 1.1 Add `com.dimafeng %% testcontainers-scala-scalatest` (+ testcontainers `postgresql`/generic
       as needed) to the `server` Test scope, versioned to match apollo-storage.
-- [ ] 1.2 Add a ScalaTest tag `E2E`; exclude it from the default `Test / test` unless `-De2e=true`
+- [x] 1.2 Add a ScalaTest tag `E2E`; exclude it from the default `Test / test` unless `-De2e=true`
       (mirror apollo's `-Dit` pattern). Confirm the default `sbt test` still skips it (fast PR CI unchanged).
+      Verified via `show server/testOptions`: default carries `-l me.cference.hephaestus.e2e.E2E`; `-De2e=true` clears it.
 
 ## 2. Container harness (`server` test)
 
-- [ ] 2.1 Bring up `postgres:16-alpine` + `calvinference/apollostorage` on a shared network — env per
+- [x] 2.1 Bring up `postgres:16-alpine` + `calvinference/apollostorage` on a shared network — env per
       compose (`POSTGRES_*`, `HTTP_PORT`, `GRPC_PORT`, single-node cluster: `CLUSTER_MIN_MEMBERS=1`),
-      wait for `/health` UP with a generous timeout; expose the mapped gRPC port.
-- [ ] 2.2 Bring up `postgres:16-alpine` (schema-init mounted) + `calvinference/hermesmq` — env per
-      compose, wait for health; expose the mapped HTTP port.
-- [ ] 2.3 A harness that builds the real `ApolloClient` + `HermesClient` from the mapped ports and a
+      wait for `/health` UP with a generous timeout; expose the mapped gRPC port. (`ConstellationContainers`.)
+- [x] 2.2 Bring up `postgres:16-alpine` + `calvinference/hermesmq` — env per compose, wait for
+      `/health/ready`; expose the mapped HTTP port. NOTE: schema is NOT mounted — hermesmq self-migrates
+      (`migrate-on-start=true` default), so the mount the spec suggested is unnecessary (documented deviation).
+- [x] 2.3 A harness that builds the real `ApolloClient` + `HermesClient` from the mapped ports and a
       real `AppConfig`, and starts the real `JobConsumer` with the real `MediaPipeline` +
-      `HermesResultPublisher`. Reuse ffmpeg/libvips (CI installs them).
+      `HermesResultPublisher`. Reuse ffmpeg/libvips (CI installs them). (`MediaWorkerE2ESpec.beforeAll`.)
 
 ## 3. The happy-path e2e (`E2E`-tagged)
 
-- [ ] 3.1 Generate a real original (ffmpeg lavfi → jpeg), compute its md5, create the media bucket,
+- [x] 3.1 Generate a real original (ffmpeg lavfi → jpeg), compute its md5, create the media bucket,
       upload it to Apollo (`ApolloClient.writeDerivative`/PutObject at `originals/<md5[0:2]>/<md5>.jpg`).
-- [ ] 3.2 Create the `media.ingest` + `media.processed` topics + subscriptions; publish a
+- [x] 3.2 Create the `media.ingest` + `media.processed` topics + subscriptions; publish a
       `ProcessMediaJob` (canonical-JSON) referencing the uploaded original to `media.ingest`.
-- [ ] 3.3 Start the worker; **assert** (with an eventually/timeout): the thumbnail (and sample)
-      derivatives exist in Apollo at `derivatives/<md5[0:2]>/<md5>/…` (read back + verify bytes), AND
+- [x] 3.3 Start the worker; **assert** (with an eventually/timeout): the thumbnail (and sample)
+      derivatives exist in Apollo at `derivatives/<md5[0:2]>/<md5>/…` (read back via HEAD), AND
       a `MediaProcessed` is pulled from `media.processed` carrying the ids, metadata, phash, derivative
-      refs, and spec version.
+      refs, and spec version. PASSED in CI (run 29053440662).
 
 ## 4. The failure-path e2e (`E2E`-tagged)
 
-- [ ] 4.1 Upload a **corrupt/unsupported** original + publish its job; **assert** a `MediaFailed`
-      (`retriable = false`) is published to `media.failed` and no derivative is written.
+- [x] 4.1 Upload a **corrupt/unsupported** original + publish its job; **assert** a `MediaFailed`
+      (`retriable = false`) is published to `media.failed` and no derivative is written. PASSED in CI.
 
 ## 5. CI + docs
 
-- [ ] 5.1 `.github/workflows/e2e.yml`: `workflow_dispatch` (+ nightly `schedule`); Docker available;
-      `LEXICON_TOKEN` env; apt `ffmpeg`/`libvips-tools`; run `sbt -De2e=true server/test` (or the
-      `E2E`-tagged suite). Watch it green — **this is the gate.**
-- [ ] 5.2 (Optional) `docker-compose.e2e.yml` + README note for running the loop locally.
-- [ ] 5.3 Confirm the default PR `ci.yml` is unchanged and still fast/green (E2E excluded).
+- [x] 5.1 `.github/workflows/e2e.yml`: push (this branch) + `workflow_dispatch` + nightly `schedule`;
+      Docker available; `LEXICON_TOKEN` env; apt `ffmpeg`/`libvips-tools`; run
+      `sbt -De2e=true server/testOnly ...MediaWorkerE2ESpec`. Green on first run (29053440662, 2m8s).
+- [x] 5.2 (Optional) `docker-compose.e2e.yml` + README note for running the loop locally.
+- [x] 5.3 Confirm the default PR `ci.yml` is unchanged and still fast/green (E2E excluded).
