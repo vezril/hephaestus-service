@@ -48,6 +48,10 @@ lazy val pekkoHttpVersion = "1.2.0"
 // pekko-grpc runtime that the generated Lexicon client was produced against (plugin 1.1.1).
 lazy val pekkoGrpcVersion = "1.1.1"
 lazy val scalaTestVersion = "3.2.19"
+// testcontainers-scala for the opt-in end-to-end tier (add-e2e-integration): orchestrates the
+// published Apollo + Hermes images (+ their Postgres) as containers. Pinned to apollo-storage's
+// version so the constellation shares one testcontainers stack.
+lazy val testcontainersVersion = "0.41.4"
 lazy val logbackVersion = "1.5.16"
 lazy val logstashEncoderVersion = "8.0"
 // Prometheus simpleclient (add-metrics-endpoint): the app CollectorRegistry, JVM/process
@@ -139,8 +143,24 @@ lazy val server = (project in file("server"))
       "io.prometheus" % "simpleclient_common" % prometheusVersion,
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
       "org.apache.pekko" %% "pekko-http-testkit" % pekkoHttpVersion % Test,
-      "org.scalatest" %% "scalatest" % scalaTestVersion % Test
+      "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
+      // End-to-end tier (add-e2e-integration): testcontainers-scala orchestrates the published
+      // Apollo + Hermes images and their Postgres on a shared Docker network. Gated by the E2E
+      // ScalaTag (see `Test / testOptions` below) — excluded from the default `sbt test`.
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersVersion % Test,
+      "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersVersion % Test
     ),
+    // Fork the test JVM so Pekko/testcontainers get a clean JVM (mirrors apollo-storage). The E2E
+    // suite boots its own ActorSystems + a gRPC channel; forking keeps that isolated.
+    Test / fork := true,
+    // --- E2E tier gating (add-e2e-integration) -------------------------------
+    // The heavy, multi-container `E2E`-tagged suite is EXCLUDED from the default `sbt test` (fast
+    // PR CI stays fast). Pass -De2e=true to include it (the dedicated e2e.yml workflow does this).
+    // Mirrors apollo-storage's -Dit gating pattern; ScalaTest's `-l <tag>` excludes a tag.
+    Test / testOptions ++= {
+      if (sys.props.get("e2e").contains("true")) Seq.empty
+      else Seq(Tests.Argument(TestFrameworks.ScalaTest, "-l", "me.cference.hephaestus.e2e.E2E"))
+    },
     // BuildInfo exposes the dynver version to the running app (health endpoint).
     buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
     buildInfoPackage := "me.cference.hephaestus.build",
