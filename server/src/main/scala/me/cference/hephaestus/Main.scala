@@ -3,7 +3,7 @@ package me.cference.hephaestus
 import me.cference.hephaestus.apollo.ApolloClient
 import me.cference.hephaestus.build.BuildInfo
 import me.cference.hephaestus.config.{AppConfig, ConfigError}
-import me.cference.hephaestus.http.{HealthRoutes, HttpServer}
+import me.cference.hephaestus.http.{HealthRoutes, HttpServer, MetricsRoutes}
 import me.cference.hephaestus.job.{HermesMessageSource, JobCodec, JobConsumer}
 import me.cference.hephaestus.media.{
   DerivativeSpec,
@@ -11,6 +11,7 @@ import me.cference.hephaestus.media.{
   ProcessCommandRunner,
   RealMediaTools
 }
+import me.cference.hephaestus.metrics.{MetricsRecorder, MetricsRegistry, PrometheusMetricsRecorder}
 import me.cference.hephaestus.report.{HermesResultPublisher, HermesResultSink}
 import com.typesafe.config.ConfigFactory
 import me.cference.hermesmq.client.HermesClient
@@ -18,6 +19,8 @@ import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ActorSystem, DispatcherSelector}
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
+import org.apache.pekko.http.scaladsl.server.Directives.*
+import org.apache.pekko.http.scaladsl.server.Route
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.AtomicBoolean
@@ -64,6 +67,21 @@ object Main:
         )
     val toolchainReady = toolchain.isReady
 
+    // Metrics (add-metrics-endpoint). When enabled, an app registry feeds the /metrics endpoint and
+    // a Prometheus recorder instruments the consumer; when disabled, no route is installed and the
+    // consumer records through the no-op recorder (zero overhead). The readiness gauge reads the
+    // shared flag at scrape time, so it mirrors /health.
+    val metricsRegistry: Option[MetricsRegistry] =
+      if cfg.metrics.enabled then
+        Some(new MetricsRegistry(BuildInfo.version, () => readiness.get()))
+      else None
+    val recorder: MetricsRecorder =
+      metricsRegistry.fold(MetricsRecorder.NoOp)(m => new PrometheusMetricsRecorder(m.registry))
+    log.info(
+      "Metrics {} (GET /metrics on the HTTP port)",
+      if cfg.metrics.enabled then "ENABLED" else "DISABLED"
+    )
+
     // Apollo object-store gRPC client (originals in, derivatives out). Constructed lazily on the
     // shared channel; released on shutdown. Reachability is not gated into readiness here — a
     // transient Apollo outage is a retriable per-job failure, not a service-down condition.
@@ -80,10 +98,14 @@ object Main:
     // transcodes never starves the HTTP health endpoint or the pull loop. It is started only when
     // the toolchain is present (a degraded toolchain would fail every job terminally); a Hermes
     // outage, by contrast, is a retriable pull failure, so consumer wiring never gates readiness.
-    if toolchainReady then wireConsumer(cfg, apollo)
+    if toolchainReady then wireConsumer(cfg, apollo, recorder)
     else log.warn("Media toolchain degraded — job consumer NOT started (readiness stays DOWN)")
 
-    val routes = HealthRoutes(BuildInfo.version, () => readiness.get())
+    // Health is always served; /metrics is concatenated only when metrics are enabled (else it
+    // falls through to a sealed 404).
+    val healthRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
+    val routes: Route =
+      metricsRegistry.map(MetricsRoutes.apply).toList.foldLeft(healthRoutes)(_ ~ _)
 
     HttpServer.bind(routes, cfg.http.host, cfg.http.port).onComplete {
       case Success(binding: ServerBinding) =>
@@ -111,7 +133,7 @@ object Main:
    * runs in Coordinated Shutdown's `service-requests-done` phase — before the Apollo client is
    * closed, so in-flight jobs can finish their durable writes.
    */
-  private def wireConsumer(cfg: AppConfig, apollo: ApolloClient)(using
+  private def wireConsumer(cfg: AppConfig, apollo: ApolloClient, recorder: MetricsRecorder)(using
       system: ActorSystem[Nothing]
   ): Unit =
     // Dedicated dispatcher for the CPU-heavy shell-outs (config: hephaestus-media-dispatcher).
@@ -152,7 +174,8 @@ object Main:
             batchSize = cfg.consumer.batchSize,
             concurrency = cfg.consumer.concurrency,
             pollInterval = cfg.consumer.pollInterval
-          )
+          ),
+          recorder = recorder
         )(using system, mediaEc)
         consumer.start()
         log.info(
