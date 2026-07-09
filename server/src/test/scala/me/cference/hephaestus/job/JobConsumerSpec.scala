@@ -2,6 +2,7 @@ package me.cference.hephaestus.job
 
 import me.cference.hephaestus.apollo.ApolloError
 import me.cference.hephaestus.media.*
+import me.cference.hephaestus.metrics.MetricsRecorder
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
@@ -55,6 +56,15 @@ final class JobConsumerSpec
     def fn: String => Either[DecodeError, DecodedJob] = payload =>
       calls.incrementAndGet()
       table.getOrElse(payload, Left(DecodeError(s"unknown payload: $payload")))
+
+  /** A [[MetricsRecorder]] that captures every recorded `(lane, outcome)` for assertion. */
+  final private class RecordingRecorder extends MetricsRecorder:
+    val outcomes: mutable.Buffer[(String, String)] = mutable.Buffer.empty
+    def recordProcessed(lane: String, outcome: String): Unit =
+      synchronized { outcomes += ((lane, outcome)); () }
+    def observeSeconds(lane: String, seconds: Double): Unit = ()
+    def inflightInc(): Unit = ()
+    def inflightDec(): Unit = ()
 
   private def seedImage(apollo: InMemoryApollo, key: String): Unit =
     apollo.seedOriginal(bucket, key, s"orig-$key".getBytes("UTF-8"), "image/png")
@@ -241,6 +251,90 @@ final class JobConsumerSpec
       results.size shouldBe 2
       // Byte-identical derivatives ⇒ equal metadata/phash/derivative refs.
       results(0) shouldBe results(1)
+    }
+  }
+
+  "the consumer — metrics recording" should {
+    "record the right outcome per lane for success, terminal, and transient jobs" in {
+      // A recorder shared across three single-message consumers; each is drained before the next so
+      // the recorded outcomes are deterministic.
+      val recorder = new RecordingRecorder
+
+      // Success on the ingest lane.
+      locally {
+        val events = mutable.Buffer.empty[String]
+        val apollo = new InMemoryApollo()
+        seedImage(apollo, "ms")
+        val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+        val source = new FakeMessageSource(events)
+        val publisher = new CapturingResultPublisher(events)
+        val decoder = new Decoder
+        decoder.table("job-s") = Right(imageJob("job-s", "ms"))
+        source.offer(Lane.Ingest, envelope("job-s"))
+        val consumer =
+          new JobConsumer(source, pipeline, publisher, decoder.fn, settings, recorder)(using
+            system,
+            ec
+          )
+        consumer.start()
+        eventually(source.acked should contain("ack-job-s"))
+        consumer.drain().futureValue
+      }
+
+      // Terminal failure on the ingest lane (unsupported content type fails in the pipeline).
+      locally {
+        val events = mutable.Buffer.empty[String]
+        val apollo = new InMemoryApollo()
+        val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+        val source = new FakeMessageSource(events)
+        val publisher = new CapturingResultPublisher(events)
+        val decoder = new Decoder
+        decoder.table("job-term") = Right(
+          DecodedJob(
+            "job-term",
+            "post-term",
+            MediaDescriptor(bucket, "mt", "", "application/pdf", Set.empty, spec)
+          )
+        )
+        source.offer(Lane.Ingest, envelope("job-term"))
+        val consumer =
+          new JobConsumer(source, pipeline, publisher, decoder.fn, settings, recorder)(using
+            system,
+            ec
+          )
+        consumer.start()
+        eventually(source.acked should contain("ack-job-term"))
+        consumer.drain().futureValue
+      }
+
+      // Transient failure on the ingest lane (Apollo unavailable ⇒ retriable, left unacked). A
+      // "seal" (undecodable ⇒ acked) marks that the loop has moved past the transient job.
+      locally {
+        val events = mutable.Buffer.empty[String]
+        val apollo = new InMemoryApollo(readFutureFailure =
+          Some(ApolloError.Unavailable("readOriginal", "apollo down"))
+        )
+        val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+        val source = new FakeMessageSource(events)
+        val publisher = new CapturingResultPublisher(events)
+        val decoder = new Decoder
+        decoder.table("job-tr") = Right(imageJob("job-tr", "mtr"))
+        source.offer(Lane.Ingest, envelope("job-tr"), Envelope("ack-seal", "seal"))
+        val sequential =
+          JobConsumer.Settings(batchSize = 1, concurrency = 1, pollInterval = 40.millis)
+        val consumer =
+          new JobConsumer(source, pipeline, publisher, decoder.fn, sequential, recorder)(using
+            system,
+            ec
+          )
+        consumer.start()
+        eventually(source.acked should contain("ack-seal"))
+        consumer.drain().futureValue
+      }
+
+      recorder.outcomes should contain(("ingest", "success"))
+      recorder.outcomes should contain(("ingest", "terminal"))
+      recorder.outcomes should contain(("ingest", "retriable"))
     }
   }
 
