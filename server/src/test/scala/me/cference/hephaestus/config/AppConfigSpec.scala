@@ -36,7 +36,50 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
         cfg.consumer.batchSize shouldBe 4
         cfg.consumer.concurrency shouldBe 2
         cfg.consumer.pollInterval.toSeconds shouldBe 1L
+        cfg.metrics.enabled shouldBe true
       case Left(err) => fail(s"expected defaults to load, got $err")
+  }
+
+  test("METRICS_ENABLED override disables metrics") {
+    // The ${?METRICS_ENABLED} substitution in application.conf flips the toggle off.
+    val disabled = ConfigFactory
+      .parseString(
+        """
+          |METRICS_ENABLED = false
+          |""".stripMargin
+      )
+      .withFallback(ConfigFactory.parseResources("application.conf"))
+      .resolve()
+
+    AppConfig.load(disabled) match
+      case Right(cfg) => cfg.metrics.enabled shouldBe false
+      case Left(err) => fail(s"expected override to load, got $err")
+  }
+
+  test("metrics default to enabled when the key is absent") {
+    // A bare config (no metrics block) still loads, defaulting the toggle to on.
+    val bare = ConfigFactory
+      .parseString(
+        """
+          |hephaestus {
+          |  http { host = "0.0.0.0", port = 8080 }
+          |  hermes {
+          |    endpoint = "hermesmq:8080", ingest-lane = "media.ingest",
+          |    reprocess-lane = "media.reprocess", processed-topic = "media.processed",
+          |    failed-topic = "media.failed"
+          |  }
+          |  apollo { endpoint = "apollostorage:8443", media-bucket = "media", deadline = "30s" }
+          |  derivatives { thumbnail-px = 250, sample-px = 850, spec-version = "1" }
+          |  thresholds { sample-min-long-edge-px = 850 }
+          |  consumer { batch-size = 4, concurrency = 2, poll-interval = "1s" }
+          |}
+          |""".stripMargin
+      )
+      .resolve()
+
+    AppConfig.load(bare) match
+      case Right(cfg) => cfg.metrics.enabled shouldBe true
+      case Left(err) => fail(s"expected bare config to load, got $err")
   }
 
   test("environment override wins over HOCON defaults") {
