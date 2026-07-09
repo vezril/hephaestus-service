@@ -69,9 +69,10 @@ NO event-persistence. No gRPC wiring yet (that is `add-apollo-io`).
 - [x] 3.2 Implement `release.yml`: on `v*` semver tag → verify-tag-on-main → test → build → push
       `X.Y.Z` + `latest`; immutability guard (`docker manifest inspect` fails if the version exists)
 - [x] 3.3 Implement `development` publish (`dev.yml`): on push → test → push `dev` + `dev-<short-sha>`
-- [ ] 3.4 Verify end-to-end: cut `v0.1.0`, pull both tags, confirm same digest; confirm failing
-      commit publishes nothing
-      — HUMAN: requires a live Docker Hub repo + push; not runnable locally.
+- [x] 3.4 Verify end-to-end: cut `v0.1.0`, pull both tags, confirm same digest; confirm failing
+      commit publishes nothing — DONE 2026-07-09: v0.1.0 released, release workflow green,
+      `calvinference/hephaestus:0.1.0`+`:latest` on Docker Hub (both 323 MB, same build); the
+      earlier dev-publish run without creds published nothing (credential guard fired).
 - [x] 3.5 Refactor: shared build steps via `.github/actions/setup-scala` composite action across
       ci/release/dev workflows
 
