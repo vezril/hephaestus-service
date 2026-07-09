@@ -52,7 +52,13 @@ final class LexiconApolloClient(client: ObjectApiClient)(using system: ActorSyst
                 case GetObjectResponse.Payload.Empty =>
                   throw ApolloError.Protocol("readOriginal", "empty payload message in stream")
             }
-            val verified = bytes.via(new Md5VerifyingStage(bucket, key, meta.md5, meta.size))
+            // Classify failures on the payload Source too (not just the header Future): an Apollo
+            // drop / DEADLINE_EXCEEDED mid-stream must surface as a typed, retriable-flagged
+            // ApolloError. `classify` is idempotent, so it passes our terminal Md5Mismatch/Truncated
+            // through unchanged.
+            val verified = bytes
+              .via(new Md5VerifyingStage(bucket, key, meta.md5, meta.size))
+              .mapError { case t => ApolloError.classify("readOriginal", t) }
             (meta, verified)
           case _ =>
             throw ApolloError.Protocol("readOriginal", "first message was not a header")
@@ -100,7 +106,9 @@ final class LexiconApolloClient(client: ObjectApiClient)(using system: ActorSyst
 /**
  * A pass-through flow that md5-hashes and size-counts the payload as it streams, and on clean
  * completion verifies both against the metadata header — failing the stream with a terminal
- * [[ApolloError]] on mismatch (corruption) or short count (truncation). Bytes are never buffered.
+ * [[ApolloError]] on a missing header md5 (Apollo contract violation), a hash mismatch
+ * (corruption), or a short count (truncation). Bytes are hashed in place (no per-chunk array copy)
+ * and never buffered.
  */
 final private class Md5VerifyingStage(
     bucket: String,
@@ -123,17 +131,23 @@ final private class Md5VerifyingStage(
         new InHandler:
           override def onPush(): Unit =
             val elem = grab(in)
-            state = state.update(elem.toArray)
+            // Feed the digest directly from the ByteString's backing buffers — no array copy.
+            elem.asByteBuffers.foreach(bb => state = state.update(bb))
             seen += elem.length
             push(out, elem)
 
           override def onUpstreamFinish(): Unit =
-            val actual = state.hexDigest
-            if expectedMd5.nonEmpty && !actual.equalsIgnoreCase(expectedMd5) then
-              failStage(ApolloError.Md5Mismatch(bucket, key, expectedMd5, actual))
-            else if expectedSize >= 0 && seen != expectedSize then
-              failStage(ApolloError.Truncated(bucket, key, expectedSize, seen))
-            else completeStage()
+            // An original with no md5 in its metadata header is an Apollo contract violation, not a
+            // signal to skip verification: fail terminally rather than pass unverified bytes.
+            if expectedMd5.isEmpty then
+              failStage(ApolloError.Protocol("readOriginal", "metadata header carried no md5"))
+            else
+              val actual = state.hexDigest
+              if !actual.equalsIgnoreCase(expectedMd5) then
+                failStage(ApolloError.Md5Mismatch(bucket, key, expectedMd5, actual))
+              else if expectedSize >= 0 && seen != expectedSize then
+                failStage(ApolloError.Truncated(bucket, key, expectedSize, seen))
+              else completeStage()
       )
 
       setHandler(

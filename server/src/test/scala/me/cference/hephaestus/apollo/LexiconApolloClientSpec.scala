@@ -98,6 +98,26 @@ final class LexiconApolloClientSpec
       ex shouldBe a[ApolloError.NotFound]
       ex.asInstanceOf[ApolloError].retriable shouldBe false
     }
+
+    "surface a typed retriable ApolloError when the payload stream drops mid-transfer" in {
+      val payload = ("bytes " * 40).getBytes("UTF-8")
+      // Header md5/size agree with the bytes, but the server drops (UNAVAILABLE) after the chunks —
+      // the failure must reach the collector classified, not as a raw StatusRuntimeException.
+      stub.injectMidStreamDrop(bucket, "dropped", payload, "application/octet-stream")
+      val (_, bytes) = apollo.readOriginal(bucket, "dropped").futureValue
+      val ex = bytes.runWith(Sink.ignore).failed.futureValue
+      ex shouldBe a[ApolloError]
+      ex.asInstanceOf[ApolloError].retriable shouldBe true
+    }
+
+    "fail terminally when the metadata header carries no md5 (Apollo contract violation)" in {
+      val payload = "unverifiable".getBytes("UTF-8")
+      stub.injectRaw(bucket, "nomd5", payload, "text/plain", "", payload.length.toLong)
+      val (_, bytes) = apollo.readOriginal(bucket, "nomd5").futureValue
+      val ex = bytes.runWith(Sink.ignore).failed.futureValue
+      ex shouldBe a[ApolloError.Protocol]
+      ex.asInstanceOf[ApolloError].retriable shouldBe false
+    }
   }
 
   "writeDerivative" should {
@@ -159,6 +179,9 @@ final class LexiconApolloClientSpec
         generation: Long
     )
     private val store = TrieMap.empty[(String, String), Stored]
+    // Keys whose GetObject emits the header + chunks then drops with UNAVAILABLE (simulates an
+    // Apollo mid-stream failure). md5/size are honest so the drop, not verification, is under test.
+    private val dropMidStream = TrieMap.empty[(String, String), Boolean]
 
     /** Seed an object whose advertised header md5/size may differ from the actual bytes. */
     def injectRaw(
@@ -170,6 +193,19 @@ final class LexiconApolloClientSpec
         headerSize: Long
     ): Unit =
       store.update((bucket, obj), Stored(bytes, contentType, headerMd5, headerSize, 1L))
+
+    /** Seed an object whose GetObject drops (UNAVAILABLE) after emitting its header and chunks. */
+    def injectMidStreamDrop(
+        bucket: String,
+        obj: String,
+        bytes: Array[Byte],
+        contentType: String
+    ): Unit =
+      store.update(
+        (bucket, obj),
+        Stored(bytes, contentType, Md5.hex(bytes), bytes.length.toLong, 1L)
+      )
+      dropMidStream.update((bucket, obj), true)
 
     private def notFound: GrpcServiceException =
       new GrpcServiceException(Status.NOT_FOUND.withDescription("no such object"))
@@ -223,7 +259,18 @@ final class LexiconApolloClientSpec
             .grouped(8)
             .map(b => GetObjectResponse(GetObjectResponse.Payload.Chunk(ProtoBytes.copyFrom(b))))
             .toList
-          Source(header :: chunks)
+          val emitted = Source(header :: chunks)
+          if dropMidStream.contains((in.bucket, in.`object`)) then
+            emitted
+              .concat(
+                Source
+                  .failed(
+                    new GrpcServiceException(Status.UNAVAILABLE.withDescription("apollo drop"))
+                  )
+                  .mapMaterializedValue(_ => NotUsed)
+              )
+              .mapMaterializedValue(_ => NotUsed)
+          else emitted
 
     def headObject(in: HeadObjectRequest, metadata: Metadata): Future[ObjectMetadata] =
       store.get((in.bucket, in.`object`)) match
