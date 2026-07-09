@@ -12,8 +12,17 @@ final case class ConfigError(message: String)
 /** HTTP bind settings. */
 final case class HttpConfig(host: String, port: Int)
 
-/** HermesMQ endpoint + the two media lane names Hephaestus consumes. */
-final case class HermesConfig(endpoint: String, ingestLane: String, reprocessLane: String)
+/**
+ * HermesMQ endpoint, the two media lane (subscription) names Hephaestus consumes, and the two
+ * result topics it publishes to (`processedTopic`/`failedTopic`).
+ */
+final case class HermesConfig(
+    endpoint: String,
+    ingestLane: String,
+    reprocessLane: String,
+    processedTopic: String,
+    failedTopic: String
+)
 
 /**
  * Apollo object-store gRPC endpoint (`host:port`), the media bucket originals live in / derivatives
@@ -102,7 +111,9 @@ object AppConfig:
       endpoint <- requiredString(c, s"$Root.hermes.endpoint")
       ingest <- requiredString(c, s"$Root.hermes.ingest-lane")
       reprocess <- requiredString(c, s"$Root.hermes.reprocess-lane")
-    yield HermesConfig(endpoint, ingest, reprocess)
+      processed <- requiredString(c, s"$Root.hermes.processed-topic")
+      failed <- requiredString(c, s"$Root.hermes.failed-topic")
+    yield HermesConfig(endpoint, ingest, reprocess, processed, failed)
 
   private def apolloConfig(c: Config): Either[ConfigError, ApolloConfig] =
     for

@@ -22,6 +22,8 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
         cfg.hermes.endpoint should not be empty
         cfg.hermes.ingestLane shouldBe "media.ingest"
         cfg.hermes.reprocessLane shouldBe "media.reprocess"
+        cfg.hermes.processedTopic shouldBe "media.processed"
+        cfg.hermes.failedTopic shouldBe "media.failed"
         cfg.apollo.endpoint should not be empty
         cfg.apollo.mediaBucket shouldBe "media"
         cfg.apollo.host shouldBe "apollostorage"
@@ -44,7 +46,7 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
       .parseString(
         """
           |APOLLO_ENDPOINT = "apollo.prod:9443"
-          |DERIVATIVE_SPEC_VERSION = "v7"
+          |DERIVATIVE_SPEC_VERSION = "7"
           |HTTP_PORT = 9090
           |""".stripMargin
       )
@@ -56,7 +58,7 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
         cfg.apollo.endpoint shouldBe "apollo.prod:9443"
         cfg.apollo.host shouldBe "apollo.prod"
         cfg.apollo.port shouldBe 9443
-        cfg.derivatives.specVersion shouldBe "v7"
+        cfg.derivatives.specVersion shouldBe "7"
         cfg.http.port shouldBe 9090
       case Left(err) => fail(s"expected override to load, got $err")
   }
