@@ -47,13 +47,24 @@ final case class DerivativeConfig(thumbnailPx: Int, samplePx: Int, specVersion: 
 /** Processing thresholds. */
 final case class ThresholdConfig(sampleMinLongEdgePx: Int)
 
+/**
+ * Consumer-loop tuning: messages pulled per batch (small + backpressured), bounded in-flight
+ * processing concurrency (CPU-heavy transcodes), and the idle back-off between empty pulls.
+ */
+final case class ConsumerConfig(
+    batchSize: Int,
+    concurrency: Int,
+    pollInterval: FiniteDuration
+)
+
 /** The fully-resolved, validated application configuration. */
 final case class AppConfig(
     http: HttpConfig,
     hermes: HermesConfig,
     apollo: ApolloConfig,
     derivatives: DerivativeConfig,
-    thresholds: ThresholdConfig
+    thresholds: ThresholdConfig,
+    consumer: ConsumerConfig
 )
 
 /**
@@ -74,7 +85,8 @@ object AppConfig:
         apollo <- apolloConfig(config)
         derived <- derivativeConfig(config)
         thresh <- thresholdConfig(config)
-      yield AppConfig(http, hermes, apollo, derived, thresh)
+        consumer <- consumerConfig(config)
+      yield AppConfig(http, hermes, apollo, derived, thresh, consumer)
     catch
       case e: ConfigException => Left(ConfigError(e.getMessage))
       case NonFatal(e) => Left(ConfigError(e.getMessage))
@@ -108,6 +120,13 @@ object AppConfig:
 
   private def thresholdConfig(c: Config): Either[ConfigError, ThresholdConfig] =
     requiredInt(c, s"$Root.thresholds.sample-min-long-edge-px").map(ThresholdConfig.apply)
+
+  private def consumerConfig(c: Config): Either[ConfigError, ConsumerConfig] =
+    for
+      batch <- requiredInt(c, s"$Root.consumer.batch-size")
+      concurrency <- requiredInt(c, s"$Root.consumer.concurrency")
+      poll <- requiredDuration(c, s"$Root.consumer.poll-interval")
+    yield ConsumerConfig(batch, concurrency, poll)
 
   /** Read a required string; a missing, null, or blank value fails naming the key. */
   private def requiredString(c: Config, key: String): Either[ConfigError, String] =
