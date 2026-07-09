@@ -42,3 +42,16 @@ object MediaError:
   /** Any unclassified failure — conservatively terminal (do not hammer on unknown errors). */
   final case class Unexpected(detail: String)
       extends MediaError(s"unexpected: $detail", retriable = false)
+
+  /**
+   * The stable wire token §4 stamps onto a published `MediaFailed.JobError.code`. Total (exhaustive
+   * over the ADT) and a contract Artemis reads, so the tokens must not drift.
+   */
+  def code(error: MediaError): String =
+    error match
+      case _: UnsupportedType => "unsupported_type"
+      case _: CorruptInput => "corrupt_input"
+      case _: ToolFailed => "tool_failed"
+      case _: PlanFailed => "plan_failed"
+      case _: Upstream => "upstream"
+      case _: Unexpected => "unexpected"
