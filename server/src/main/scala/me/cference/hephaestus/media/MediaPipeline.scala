@@ -211,12 +211,28 @@ final class MediaPipeline(
     }
 
   private def toMediaError(t: Throwable): MediaError =
-    t match
-      case e: MediaError => e
-      case e: ApolloError => MediaError.Upstream("apollo", e.getMessage, e.retriable)
-      case NonFatal(e) =>
-        MediaError.Unexpected(Option(e.getMessage).getOrElse(e.getClass.getName))
-      case fatal => throw fatal
+    // A stream failure (e.g. a terminal md5 mismatch on the verified read) is wrapped by Pekko's
+    // IOOperationIncompleteException before it reaches us, so classify by walking the cause chain
+    // for the first typed error rather than only the outermost throwable.
+    causeChain(t)
+      .collectFirst {
+        case e: MediaError => e
+        case e: ApolloError => MediaError.Upstream("apollo", e.getMessage, e.retriable)
+      }
+      .getOrElse {
+        t match
+          case NonFatal(e) =>
+            MediaError.Unexpected(Option(e.getMessage).getOrElse(e.getClass.getName))
+          case fatal => throw fatal
+      }
+
+  private def causeChain(t: Throwable): List[Throwable] =
+    val seen = scala.collection.mutable.ListBuffer.empty[Throwable]
+    var current: Throwable | Null = t
+    while current != null && !seen.contains(current) do
+      seen += current
+      current = current.getCause
+    seen.toList
 
   private def deleteRecursively(dir: Path): Unit =
     try
