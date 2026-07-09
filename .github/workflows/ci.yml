@@ -44,6 +44,7 @@ jobs:
       # The media pipeline's real-tool integration tests shell out to ffmpeg/ffprobe
       # (video) and vips/vipsheader (images, pHash raster). Install both so those tests
       # run in CI rather than only the fake-based orchestration tests (add-media-pipeline).
+      # The integration fixtures and pHash goldens assume the stock Ubuntu ffmpeg/libvips.
       - name: Install media toolchain (ffmpeg + libvips)
         run: |
           sudo apt-get update

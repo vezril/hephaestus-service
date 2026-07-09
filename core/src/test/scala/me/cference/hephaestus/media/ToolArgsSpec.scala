@@ -60,9 +60,14 @@ final class ToolArgsSpec extends AnyFunSuite with Matchers:
       )
   }
 
-  test("vipsColourspaceBW converts to single-band greyscale") {
-    ToolArgs.vipsColourspaceBW("/tmp/g.png", "/tmp/g.pgm") shouldBe
-      Seq("vips", "colourspace", "/tmp/g.png", "/tmp/g.pgm", "b-w")
+  test("vipsColourspaceBW converts to greyscale") {
+    ToolArgs.vipsColourspaceBW("/tmp/g.png", "/tmp/g.bw.png") shouldBe
+      Seq("vips", "colourspace", "/tmp/g.png", "/tmp/g.bw.png", "b-w")
+  }
+
+  test("vipsExtractBand keeps only the grey plane (drops alpha for RGBA sources)") {
+    ToolArgs.vipsExtractBand("/tmp/g.bw.png", "/tmp/g.pgm", 0, 1) shouldBe
+      Seq("vips", "extract_band", "/tmp/g.bw.png", "/tmp/g.pgm", "0", "--n", "1")
   }
 
   test("ffprobeJson prints json on stdout only") {

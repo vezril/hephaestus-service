@@ -52,10 +52,16 @@ object PerceptualHash:
       i += 1
     PHash(bits)
 
-  /** Orthonormal 2-D DCT-II of an `n`×`n` row-major raster, returned row-major. */
+  /**
+   * Orthonormal 2-D DCT-II of an `n`×`n` row-major raster, returned row-major. Uses `StrictMath`
+   * (not `java.lang.Math`) so the cosines/roots are bit-identical across CPUs — a coefficient
+   * sitting exactly on the median must not flip a hash bit between the constellation's laptops, or
+   * the "identical original ⇒ identical hash" contract would break on heterogeneous hardware.
+   */
   private def dct2d(pixels: IArray[Int], n: Int): Array[Double] =
-    val cos = Array.tabulate(n, n)((k, x) => math.cos(((2 * x + 1) * k * math.Pi) / (2 * n)))
-    val c = Array.tabulate(n)(k => if k == 0 then math.sqrt(1.0 / n) else math.sqrt(2.0 / n))
+    val cos = Array.tabulate(n, n)((k, x) => StrictMath.cos(((2 * x + 1) * k * math.Pi) / (2 * n)))
+    val c =
+      Array.tabulate(n)(k => if k == 0 then StrictMath.sqrt(1.0 / n) else StrictMath.sqrt(2.0 / n))
     val out = new Array[Double](n * n)
     var u = 0
     while u < n do
