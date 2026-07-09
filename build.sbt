@@ -56,6 +56,12 @@ lazy val logbackVersion = "1.5.16"
 ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
   "https://maven.pkg.github.com/vezril/the-lexicon"
 )
+// The HermesMQ Scala client (+ its domain value types) is published to a SEPARATE GitHub Packages
+// repo (add-job-consumption). Same host (maven.pkg.github.com) as the-lexicon, so the credential
+// block below authenticates both — the read:packages token must grant BOTH packages.
+ThisBuild / resolvers += "GitHub Packages — hermesmq".at(
+  "https://maven.pkg.github.com/vezril/hermesmq"
+)
 // Add the env-token credential ONLY when a token is actually present. A blank-password Credentials
 // entry would still match host maven.pkg.github.com and, since Credentials.forHost is first-wins,
 // shadow the ~/.sbt/.credentials fallback below — silently 401ing local dev. (CI always sets
@@ -102,7 +108,15 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-slf4j" % pekkoVersion,
       // Apollo object-store gRPC stubs (ObjectApi client + messages), generated once in the
       // Lexicon from the shared contract (add-apollo-io). Pinned SemVer; no local .proto.
-      "io.codex" %% "lexicon-grpc" % "0.1.0",
+      // One Lexicon version across the service: the async message contracts (below) ship at
+      // 0.4.0, so the gRPC pin is bumped to match (add-job-consumption).
+      "io.codex" %% "lexicon-grpc" % "0.4.0",
+      // The async HermesMQ message contracts (ProcessMediaJob et al.) as ScalaPB case classes +
+      // scalapb-json4s canonical-JSON codec — the wire format Hephaestus decodes (add-job-consumption).
+      "io.codex" %% "lexicon-messages" % "0.4.0",
+      // The HermesMQ pull/ack REST client (+ transitive hermesmq-domain identifiers). Built against
+      // Pekko 1.2.0, matching the service's converged version.
+      "me.cference.hermesmq" %% "hermesmq-client" % "1.4.0",
       // gRPC runtime the generated client needs (GrpcClientSettings, ServiceHandler). We consume
       // pre-generated stubs, so the pekko-grpc sbt PLUGIN is not needed — only its runtime.
       "org.apache.pekko" %% "pekko-grpc-runtime" % pekkoGrpcVersion,
