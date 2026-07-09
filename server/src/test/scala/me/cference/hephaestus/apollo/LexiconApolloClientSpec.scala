@@ -149,7 +149,7 @@ final class LexiconApolloClientSpec
    * client exercises are implemented; the rest fail UNIMPLEMENTED.
    */
   final private class StubObjectApi extends ObjectApiPowerApi:
-    import system.executionContext
+    private given scala.concurrent.ExecutionContext = system.executionContext
 
     final private case class Stored(
         bytes: Array[Byte],
