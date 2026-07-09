@@ -23,6 +23,10 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
         cfg.hermes.ingestLane shouldBe "media.ingest"
         cfg.hermes.reprocessLane shouldBe "media.reprocess"
         cfg.apollo.endpoint should not be empty
+        cfg.apollo.mediaBucket shouldBe "media"
+        cfg.apollo.host shouldBe "apollostorage"
+        cfg.apollo.port shouldBe 8443
+        cfg.apollo.deadline.toSeconds shouldBe 30L
         cfg.derivatives.thumbnailPx shouldBe 250
         cfg.derivatives.samplePx shouldBe 850
         cfg.derivatives.specVersion should not be empty
@@ -47,9 +51,19 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
     AppConfig.load(overridden) match
       case Right(cfg) =>
         cfg.apollo.endpoint shouldBe "apollo.prod:9443"
+        cfg.apollo.host shouldBe "apollo.prod"
+        cfg.apollo.port shouldBe 9443
         cfg.derivatives.specVersion shouldBe "v7"
         cfg.http.port shouldBe 9090
       case Left(err) => fail(s"expected override to load, got $err")
+  }
+
+  test("apollo endpoint host:port splits on the last colon") {
+    ApolloConfig.splitHostPort("apollostorage:8443") shouldBe ("apollostorage", 8443)
+    ApolloConfig.splitHostPort("apollo.prod:9443") shouldBe ("apollo.prod", 9443)
+    // No port ⇒ 0 (client build surfaces the misconfiguration rather than guessing a default).
+    ApolloConfig.splitHostPort("apollostorage") shouldBe ("apollostorage", 0)
+    ApolloConfig.splitHostPort("host:notaport") shouldBe ("host", 0)
   }
 
   test("required key nulled out over the defaults fails fast naming the key") {

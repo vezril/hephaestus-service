@@ -2,6 +2,7 @@ package me.cference.hephaestus.config
 
 import com.typesafe.config.{Config, ConfigException}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 import scala.util.control.NonFatal
 
@@ -14,8 +15,31 @@ final case class HttpConfig(host: String, port: Int)
 /** HermesMQ endpoint + the two media lane names Hephaestus consumes. */
 final case class HermesConfig(endpoint: String, ingestLane: String, reprocessLane: String)
 
-/** Apollo object-store endpoint. */
-final case class ApolloConfig(endpoint: String)
+/**
+ * Apollo object-store gRPC endpoint (`host:port`), the media bucket originals live in / derivatives
+ * are written to, and the per-call gRPC deadline. `host`/`port` are parsed from `endpoint` so the
+ * client can build `GrpcClientSettings` directly.
+ */
+final case class ApolloConfig(
+    endpoint: String,
+    mediaBucket: String,
+    deadline: FiniteDuration
+):
+  /** Host portion of `endpoint` (everything before the last colon). */
+  def host: String = ApolloConfig.splitHostPort(endpoint)._1
+
+  /** Port portion of `endpoint` (after the last colon); 0 if `endpoint` carries no valid port. */
+  def port: Int = ApolloConfig.splitHostPort(endpoint)._2
+
+object ApolloConfig:
+  /** Split `host:port` on the LAST colon (IPv6-tolerant-ish); a missing/blank port yields 0. */
+  private[config] def splitHostPort(endpoint: String): (String, Int) =
+    endpoint.lastIndexOf(':') match
+      case -1 => (endpoint, 0)
+      case i =>
+        val host = endpoint.substring(0, i)
+        val port = endpoint.substring(i + 1).toIntOption.getOrElse(0)
+        (host, port)
 
 /** Derivative output dimensions + the stamped spec version. */
 final case class DerivativeConfig(thumbnailPx: Int, samplePx: Int, specVersion: String)
@@ -69,7 +93,11 @@ object AppConfig:
     yield HermesConfig(endpoint, ingest, reprocess)
 
   private def apolloConfig(c: Config): Either[ConfigError, ApolloConfig] =
-    requiredString(c, s"$Root.apollo.endpoint").map(ApolloConfig.apply)
+    for
+      endpoint <- requiredString(c, s"$Root.apollo.endpoint")
+      bucket <- requiredString(c, s"$Root.apollo.media-bucket")
+      deadline <- requiredDuration(c, s"$Root.apollo.deadline")
+    yield ApolloConfig(endpoint, bucket, deadline)
 
   private def derivativeConfig(c: Config): Either[ConfigError, DerivativeConfig] =
     for
@@ -99,3 +127,14 @@ object AppConfig:
       Try(c.getInt(key)).toEither.left.map(e =>
         ConfigError(s"config key $key is not an int: ${e.getMessage}")
       )
+
+  /**
+   * Read a required HOCON duration (e.g. `30s`); a missing or malformed value fails naming the key.
+   */
+  private def requiredDuration(c: Config, key: String): Either[ConfigError, FiniteDuration] =
+    if !c.hasPath(key) then Left(ConfigError(s"missing required config key: $key"))
+    else
+      Try(
+        FiniteDuration(c.getDuration(key).toNanos, java.util.concurrent.TimeUnit.NANOSECONDS)
+      ).toEither.left
+        .map(e => ConfigError(s"config key $key is not a duration: ${e.getMessage}"))

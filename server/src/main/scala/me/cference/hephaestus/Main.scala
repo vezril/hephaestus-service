@@ -1,9 +1,11 @@
 package me.cference.hephaestus
 
+import me.cference.hephaestus.apollo.ApolloClient
 import me.cference.hephaestus.build.BuildInfo
 import me.cference.hephaestus.config.{AppConfig, ConfigError}
 import me.cference.hephaestus.http.{HealthRoutes, HttpServer}
 import com.typesafe.config.ConfigFactory
+import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
@@ -51,6 +53,18 @@ object Main:
           missing.mkString(", ")
         )
     val toolchainReady = toolchain.isReady
+
+    // Apollo object-store gRPC client (originals in, derivatives out). Constructed lazily on the
+    // shared channel; released on shutdown. Reachability is not gated into readiness here — a
+    // transient Apollo outage is a retriable per-job failure, not a service-down condition.
+    val apollo = ApolloClient.fromConfig(cfg.apollo)
+    log.info("Apollo object-store client wired — endpoint {}", cfg.apollo.endpoint)
+    CoordinatedShutdown(system).addTask(
+      CoordinatedShutdown.PhaseServiceStop,
+      "close-apollo-client"
+    ) { () =>
+      apollo.close()
+    }
 
     val routes = HealthRoutes(BuildInfo.version, () => readiness.get())
 
