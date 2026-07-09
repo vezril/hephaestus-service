@@ -1,5 +1,7 @@
 import com.typesafe.sbt.packager.docker.Cmd
 
+import java.nio.file.Files
+
 // ---------------------------------------------------------------------------
 // Hephaestus — the forge. Stateless media-worker service of the constellation.
 //
@@ -39,10 +41,35 @@ ThisBuild / scalacOptions ++= Seq(
   "-Wunused:all"
 )
 
-lazy val pekkoVersion = "1.1.3"
-lazy val pekkoHttpVersion = "1.1.0"
+// Converged on Pekko 1.2.0: the Lexicon gRPC stubs (and Apollo) are built there,
+// and Pekko forbids a mixed-version classpath (add-apollo-io / hephaestus-pekko-convergence).
+lazy val pekkoVersion = "1.2.0"
+lazy val pekkoHttpVersion = "1.2.0"
+// pekko-grpc runtime that the generated Lexicon client was produced against (plugin 1.1.1).
+lazy val pekkoGrpcVersion = "1.1.1"
 lazy val scalaTestVersion = "3.2.19"
 lazy val logbackVersion = "1.5.16"
+
+// The Apollo gRPC contract is consumed as the published Lexicon stubs, not a local .proto
+// (add-apollo-io). GitHub Packages requires auth even for public reads: use a read:packages
+// token from LEXICON_TOKEN, else GITHUB_TOKEN, else an sbt ~/.sbt/.credentials file if present.
+ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
+  "https://maven.pkg.github.com/vezril/the-lexicon"
+)
+ThisBuild / credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  "vezril",
+  sys.env
+    .get("LEXICON_TOKEN")
+    .filter(_.nonEmpty)
+    .orElse(sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty))
+    .getOrElse("")
+)
+ThisBuild / credentials ++= {
+  val dotCredentials = Path.userHome / ".sbt" / ".credentials"
+  if (Files.exists(dotCredentials.toPath)) Seq(Credentials(dotCredentials)) else Seq.empty
+}
 
 // --- root: aggregate only, not published -------------------------------------
 lazy val root = (project in file("."))
@@ -72,6 +99,15 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-http" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-http-spray-json" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-slf4j" % pekkoVersion,
+      // Apollo object-store gRPC stubs (ObjectApi client + messages), generated once in the
+      // Lexicon from the shared contract (add-apollo-io). Pinned SemVer; no local .proto.
+      "io.codex" %% "lexicon-grpc" % "0.1.0",
+      // gRPC runtime the generated client needs (GrpcClientSettings, ServiceHandler). We consume
+      // pre-generated stubs, so the pekko-grpc sbt PLUGIN is not needed — only its runtime.
+      "org.apache.pekko" %% "pekko-grpc-runtime" % pekkoGrpcVersion,
+      // GrpcClientSettings resolves endpoints via pekko-discovery; align it with pekkoVersion
+      // (it is otherwise pulled transitively at a possibly-mismatched version).
+      "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
       "org.apache.pekko" %% "pekko-http-testkit" % pekkoHttpVersion % Test,

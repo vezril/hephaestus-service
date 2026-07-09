@@ -16,6 +16,11 @@ concurrency:
 permissions:
   contents: read
 
+# read:packages token for resolving the Lexicon gRPC stubs from GitHub Packages
+# (add-apollo-io). sbt reads LEXICON_TOKEN in build.sbt's credentials block.
+env:
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+
 jobs:
   # Formatting is a separate job so a scalafmt violation fails independently of
   # the tests (a green test suite must not mask a format failure).
