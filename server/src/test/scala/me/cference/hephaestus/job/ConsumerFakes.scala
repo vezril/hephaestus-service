@@ -11,8 +11,7 @@ import scala.concurrent.{ExecutionContext, Future}
  * dequeue up to `max` (backpressure), and every ack is recorded — both in `acked` (the ack handles)
  * and in the shared `events` log (so ordering against publishes is assertable).
  */
-final class FakeMessageSource(events: mutable.Buffer[String])(using ec: ExecutionContext)
-    extends MessageSource:
+final class FakeMessageSource(events: mutable.Buffer[String]) extends MessageSource:
 
   private val queues =
     Map(Lane.Ingest -> mutable.Queue[Envelope](), Lane.Reprocess -> mutable.Queue[Envelope]())
