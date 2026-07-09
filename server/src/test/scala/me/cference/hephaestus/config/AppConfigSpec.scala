@@ -31,6 +31,9 @@ final class AppConfigSpec extends AnyFunSuite with Matchers:
         cfg.derivatives.samplePx shouldBe 850
         cfg.derivatives.specVersion should not be empty
         cfg.thresholds.sampleMinLongEdgePx shouldBe 850
+        cfg.consumer.batchSize shouldBe 4
+        cfg.consumer.concurrency shouldBe 2
+        cfg.consumer.pollInterval.toSeconds shouldBe 1L
       case Left(err) => fail(s"expected defaults to load, got $err")
   }
 

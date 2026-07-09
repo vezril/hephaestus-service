@@ -1,0 +1,249 @@
+package me.cference.hephaestus.job
+
+import me.cference.hephaestus.apollo.ApolloError
+import me.cference.hephaestus.media.*
+import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import org.scalatest.concurrent.{Eventually, ScalaFutures}
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.time.{Millis, Seconds, Span}
+import org.scalatest.wordspec.AnyWordSpecLike
+
+import java.util.concurrent.atomic.AtomicInteger
+import scala.collection.mutable
+import scala.concurrent.duration.*
+import scala.concurrent.{ExecutionContext, Future, Promise}
+
+/**
+ * Loop tests for the two-lane priority consumer with the in-memory [[FakeMessageSource]] +
+ * [[CapturingResultPublisher]], driving the REAL §2 [[MediaPipeline]] over an in-memory Apollo +
+ * fake media tools. They assert the ack invariants end-to-end: ack-after-publish ordering,
+ * ingest-before-reprocess priority, terminal→report+ack, transient→no-ack, idempotent redelivery,
+ * one-bad-message-doesn't-wedge, and graceful drain.
+ */
+final class JobConsumerSpec
+    extends ScalaTestWithActorTestKit
+    with AnyWordSpecLike
+    with Matchers
+    with ScalaFutures
+    with Eventually:
+
+  private given ec: ExecutionContext = system.executionContext
+
+  implicit override val patienceConfig: PatienceConfig =
+    PatienceConfig(timeout = Span(10, Seconds), interval = Span(25, Millis))
+
+  private val bucket = "media"
+  private val spec = DerivativeSpec(250, 850, 850, "v1")
+  private val settings =
+    JobConsumer.Settings(batchSize = 4, concurrency = 2, pollInterval = 40.millis)
+
+  private def imageJob(jobId: String, key: String): DecodedJob =
+    DecodedJob(
+      jobId,
+      s"post-$jobId",
+      MediaDescriptor(bucket, key, "image", "image/png", DerivativeKind.values.toSet, spec)
+    )
+
+  private def envelope(jobId: String): Envelope = Envelope(s"ack-$jobId", jobId)
+
+  /**
+   * A payload→outcome decode table + a call counter, driving the consumer without touching JSON.
+   */
+  final private class Decoder:
+    val table: mutable.Map[String, Either[DecodeError, DecodedJob]] = mutable.Map.empty
+    val calls: AtomicInteger = new AtomicInteger(0)
+    def fn: String => Either[DecodeError, DecodedJob] = payload =>
+      calls.incrementAndGet()
+      table.getOrElse(payload, Left(DecodeError(s"unknown payload: $payload")))
+
+  private def seedImage(apollo: InMemoryApollo, key: String): Unit =
+    apollo.seedOriginal(bucket, key, s"orig-$key".getBytes("UTF-8"), "image/png")
+
+  "the consumer — happy path" should {
+    "ack strictly after publishing the result" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "k1")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("job-1") = Right(imageJob("job-1", "k1"))
+      source.offer(Lane.Ingest, envelope("job-1"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain("ack-job-1"))
+      consumer.drain().futureValue
+
+      publisher.published.map(_._1.jobId) shouldBe Seq("job-1")
+      publisher.published.head._2.isRight shouldBe true
+      events.indexOf("publish:job-1") should be < events.indexOf("ack:ack-job-1")
+    }
+  }
+
+  "the consumer — lane priority" should {
+    "drain ingest fully before pulling reprocess" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      Seq("ka", "kb", "kc").foreach(seedImage(apollo, _))
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("job-a") = Right(imageJob("job-a", "ka"))
+      decoder.table("job-b") = Right(imageJob("job-b", "kb"))
+      decoder.table("job-c") = Right(imageJob("job-c", "kc"))
+      source.offer(Lane.Ingest, envelope("job-a"), envelope("job-b"))
+      source.offer(Lane.Reprocess, envelope("job-c"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain allOf ("ack-job-a", "ack-job-b", "ack-job-c"))
+      consumer.drain().futureValue
+
+      val reprocessAt = source.acked.indexOf("ack-job-c")
+      source.acked.indexOf("ack-job-a") should be < reprocessAt
+      source.acked.indexOf("ack-job-b") should be < reprocessAt
+    }
+  }
+
+  "the consumer — terminal failure" should {
+    "report the failure and ack (no poison redelivery)" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      // An unsupported content type fails terminally in the pipeline before any Apollo read.
+      decoder.table("job-x") = Right(
+        DecodedJob(
+          "job-x",
+          "post-x",
+          MediaDescriptor(bucket, "kx", "", "application/pdf", Set.empty, spec)
+        )
+      )
+      source.offer(Lane.Ingest, envelope("job-x"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain("ack-job-x"))
+      consumer.drain().futureValue
+
+      publisher.published.map(_._1.jobId) shouldBe Seq("job-x")
+      publisher.published.head._2 match
+        case Left(e: MediaError.UnsupportedType) => e.retriable shouldBe false
+        case other => fail(s"expected terminal UnsupportedType, got $other")
+    }
+
+    "ack an undecodable message without publishing, and not wedge the lane" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "kg")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("good") = Right(imageJob("job-good", "kg"))
+      // "bad" is absent from the table ⇒ Left(DecodeError) ⇒ terminal decode failure.
+      source.offer(Lane.Ingest, Envelope("ack-bad", "bad"), Envelope("ack-good", "good"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain allOf ("ack-bad", "ack-good"))
+      consumer.drain().futureValue
+
+      // The bad message was acked (not redelivered) but never published; the good one processed fine.
+      publisher.published.map(_._1.jobId) shouldBe Seq("job-good")
+    }
+  }
+
+  "the consumer — transient failure" should {
+    "leave the message unacked for redelivery (no publish, no ack)" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo(readFutureFailure =
+        Some(ApolloError.Unavailable("readOriginal", "apollo down"))
+      )
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("job-t") = Right(imageJob("job-t", "kt"))
+      source.offer(Lane.Ingest, envelope("job-t"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      // Wait until the job has been pulled + decoded, then confirm it settles UNacked.
+      eventually(decoder.calls.get should be >= 1)
+      Thread.sleep(250)
+      consumer.drain().futureValue
+
+      source.acked shouldBe empty
+      publisher.published shouldBe empty
+    }
+  }
+
+  "the consumer — idempotency" should {
+    "re-produce byte-identical output and re-publish an equivalent result on redelivery" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "ki")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events)
+      val decoder = new Decoder
+      decoder.table("job-i") = Right(imageJob("job-i", "ki"))
+      // Same jobId delivered twice (distinct ack handles) — an at-least-once redelivery.
+      source.offer(Lane.Ingest, Envelope("ack-i1", "job-i"), Envelope("ack-i2", "job-i"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      eventually(source.acked should contain allOf ("ack-i1", "ack-i2"))
+      consumer.drain().futureValue
+
+      publisher.published.size shouldBe 2
+      val results = publisher.published.map(_._2).collect { case Right(r) => r }
+      results.size shouldBe 2
+      // Byte-identical derivatives ⇒ equal metadata/phash/derivative refs.
+      results(0) shouldBe results(1)
+    }
+  }
+
+  "the consumer — graceful drain" should {
+    "finish in-flight work and ack it before terminating" in {
+      val events = mutable.Buffer.empty[String]
+      val apollo = new InMemoryApollo()
+      seedImage(apollo, "kd")
+      val pipeline = new MediaPipeline(apollo, new FakeMediaTools(), freshRoot())
+      val gate = Promise[Unit]()
+      val source = new FakeMessageSource(events)
+      val publisher = new CapturingResultPublisher(events, gate = Some(gate.future))
+      val decoder = new Decoder
+      decoder.table("job-d") = Right(imageJob("job-d", "kd"))
+      source.offer(Lane.Ingest, envelope("job-d"))
+
+      val consumer =
+        new JobConsumer(source, pipeline, publisher, decoder.fn, settings)(using system, ec)
+      consumer.start()
+      // Wait until a job is in-flight AT the publish step (blocked on the gate).
+      eventually(publisher.entries.get shouldBe 1)
+
+      val drained = consumer.drain()
+      drained.value shouldBe None // in-flight work not yet finished
+      source.acked shouldBe empty // nothing acked before publish completes
+
+      gate.success(()) // release the in-flight publish
+      drained.futureValue // drain completes only after in-flight finishes
+      source.acked should contain("ack-job-d") // finished AND acked before terminate
+    }
+  }
+
+  private def freshRoot(): java.nio.file.Path =
+    java.nio.file.Files.createTempDirectory("heph-consumer-")
