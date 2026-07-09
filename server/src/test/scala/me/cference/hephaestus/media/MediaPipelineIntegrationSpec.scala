@@ -164,6 +164,47 @@ final class MediaPipelineIntegrationSpec
     }
   }
 
+  "a real RGBA (alpha-channel) png" should {
+    "process successfully with a stable phash (the greyscale raster drops the alpha band)" in {
+      assume(toolsOk, "media toolchain not installed")
+      // `format=rgba` embeds a real alpha channel (PNG colour-type 6). Without the extract_band
+      // step the b-w conversion yields a 2-band grey+alpha image that the single-band PGM save
+      // rejects, failing every transparent PNG — so this fixture is the regression guard.
+      val bytes = generate(
+        Seq(
+          "ffmpeg",
+          "-y",
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc=size=900x600:duration=1",
+          "-frames:v",
+          "1",
+          "-vf",
+          "format=rgba"
+        ),
+        ".png"
+      )
+      val md5 = seed("originals/alpha.png", bytes, "image/png")
+
+      val ok = pipeline
+        .process(descriptor("image/png", "originals/alpha.png"))
+        .futureValue
+        .getOrElse(fail("expected success — an RGBA png must not fail the phash raster path"))
+
+      ok.metadata.width shouldBe 900
+      ok.metadata.height shouldBe 600
+      ok.phash should fullyMatch regex "[0-9a-f]{16}"
+      isWebp(storedBytes(s"derivatives/${md5.take(2)}/$md5/thumb.webp")) shouldBe true
+
+      val again = pipeline
+        .process(descriptor("image/png", "originals/alpha.png"))
+        .futureValue
+        .getOrElse(fail("expected success"))
+      again.phash shouldBe ok.phash
+    }
+  }
+
   // --- video -----------------------------------------------------------------
 
   "a real short mp4 with audio" should {

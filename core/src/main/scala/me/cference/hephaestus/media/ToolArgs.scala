@@ -54,9 +54,21 @@ object ToolArgs:
       "force"
     )
 
-  /** Convert `input` to single-band greyscale, writing `output` (a PGM the pHash raster reads). */
+  /**
+   * Convert `input` to greyscale, writing `output`. On an RGBA source this yields a two-band
+   * grey+alpha image, so the pHash raster path follows it with [[vipsExtractBand]] to drop the
+   * alpha before the single-band PGM save (which rejects multi-band input).
+   */
   def vipsColourspaceBW(input: String, output: String): Seq[String] =
     Seq("vips", "colourspace", input, output, "b-w")
+
+  /**
+   * Extract `n` band(s) starting at `band` from `input`, writing `output`. Used in the pHash raster
+   * path as `extract_band 0 --n 1` to keep only the grey plane of a (possibly grey+alpha) b-w image
+   * — so a transparent PNG hashes deterministically instead of failing the single-band PGM save.
+   */
+  def vipsExtractBand(input: String, output: String, band: Int, n: Int): Seq[String] =
+    Seq("vips", "extract_band", input, output, band.toString, "--n", n.toString)
 
   /** Probe container/streams as JSON on stdout only (`-v quiet`) for metadata extraction. */
   def ffprobeJson(input: String): Seq[String] =
