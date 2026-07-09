@@ -40,12 +40,21 @@ final class HermesMessageSource(
 
   def ack(lane: Lane, ackIds: List[String]): Future[Unit] =
     if ackIds.isEmpty then Future.unit
-    else client.ack(subscription(lane), ackIds.map(unsafeAckId))
+    else
+      // Parse to a typed error rather than throwing inside the client call — a blank ackId then
+      // surfaces as a FAILED Future (which the consumer loop tolerates), never a synchronous throw.
+      parseAll(ackIds) match
+        case Right(ids) => client.ack(subscription(lane), ids)
+        case Left(bad) =>
+          Future.failed(new IllegalArgumentException(s"blank/invalid ackId from Hermes: '$bad'"))
 
-  private def unsafeAckId(raw: String): AckId =
-    AckId
-      .from(raw)
-      .getOrElse(throw new IllegalArgumentException(s"blank ackId from Hermes: '$raw'"))
+  private def parseAll(raw: List[String]): Either[String, List[AckId]] =
+    raw.foldRight[Either[String, List[AckId]]](Right(Nil)) { (r, acc) =>
+      for
+        rest <- acc
+        id <- AckId.from(r).left.map(_ => r)
+      yield id :: rest
+    }
 
 object HermesMessageSource:
 

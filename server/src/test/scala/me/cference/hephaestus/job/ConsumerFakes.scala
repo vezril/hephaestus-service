@@ -9,9 +9,14 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * An in-memory [[MessageSource]] for the consumer loop tests: messages are offered per lane, pulls
  * dequeue up to `max` (backpressure), and every ack is recorded — both in `acked` (the ack handles)
- * and in the shared `events` log (so ordering against publishes is assertable).
+ * and in the shared `events` log (so ordering against publishes is assertable). `throwAckFor` makes
+ * `ack` throw *synchronously* for the given ack handles, modeling a seam that throws eagerly — the
+ * loop must survive it, not just a failed Future.
  */
-final class FakeMessageSource(events: mutable.Buffer[String]) extends MessageSource:
+final class FakeMessageSource(
+    events: mutable.Buffer[String],
+    throwAckFor: Set[String] = Set.empty
+) extends MessageSource:
 
   private val queues =
     Map(Lane.Ingest -> mutable.Queue[Envelope](), Lane.Reprocess -> mutable.Queue[Envelope]())
@@ -32,6 +37,10 @@ final class FakeMessageSource(events: mutable.Buffer[String]) extends MessageSou
     }
 
   def ack(lane: Lane, ackIds: List[String]): Future[Unit] =
+    // Throw BEFORE recording — a synchronous escape, evaluated before any `.recover` attaches.
+    ackIds.find(throwAckFor.contains).foreach { id =>
+      throw new IllegalStateException(s"synchronous ack throw for $id")
+    }
     synchronized {
       ackIds.foreach { id =>
         acked += id
