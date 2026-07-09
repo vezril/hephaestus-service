@@ -1,0 +1,52 @@
+name: E2E
+
+# The opt-in end-to-end integration tier (add-e2e-integration): boots the published Apollo + Hermes
+# images via testcontainers and runs THIS repo's real worker against them. It is HEAVY (multi-image
+# pull + two Pekko clusters) and deliberately NOT part of the required PR checks in ci.yml — the fast
+# PR CI stays fast. This workflow runs it on demand and nightly.
+#
+# Triggers:
+#   - push to feat/add-e2e-integration — so iterating on the branch verifies the suite in CI (this is
+#     the development gate; it harmlessly stops firing once the branch is deleted after merge).
+#   - workflow_dispatch — the lasting on-demand form (run it against development/main whenever).
+#   - schedule (nightly) — a standing regression signal against the current published images.
+on:
+  push:
+    branches: [feat/add-e2e-integration]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC nightly
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# read:packages token for the shared GitHub Packages artifacts (Lexicon gRPC + messages, HermesMQ
+# client). sbt reads LEXICON_TOKEN in build.sbt's credentials block. The e2e also pulls the Apollo +
+# Hermes images from Docker Hub (public — no auth needed).
+env:
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+
+jobs:
+  e2e:
+    name: End-to-end (Apollo + Hermes containers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # sbt-dynver needs full history + tags
+      - uses: ./.github/actions/setup-scala
+      # The in-process worker shells out to ffmpeg/ffprobe (video/poster) and vips/vipsheader
+      # (thumbs + pHash raster); the happy-path fixture is generated with ffmpeg's lavfi source.
+      - name: Install media toolchain (ffmpeg + libvips)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg libvips-tools
+      # GitHub-hosted ubuntu runners ship a running Docker daemon — testcontainers uses it directly.
+      - name: Docker sanity
+        run: docker version
+      - name: Run the E2E-tagged suite
+        run: sbt -batch -De2e=true "server/testOnly me.cference.hephaestus.e2e.MediaWorkerE2ESpec"
