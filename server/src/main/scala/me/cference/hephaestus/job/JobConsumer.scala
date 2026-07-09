@@ -1,6 +1,7 @@
 package me.cference.hephaestus.job
 
-import me.cference.hephaestus.media.MediaPipeline
+import me.cference.hephaestus.media.{MediaError, MediaPipeline, MediaResult}
+import me.cference.hephaestus.metrics.MetricsRecorder
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.stream.Materializer
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
@@ -42,7 +43,8 @@ final class JobConsumer(
     pipeline: MediaPipeline,
     publisher: ResultPublisher,
     decode: String => Either[DecodeError, DecodedJob],
-    settings: JobConsumer.Settings
+    settings: JobConsumer.Settings,
+    recorder: MetricsRecorder = MetricsRecorder.NoOp
 )(using system: ActorSystem[?], processingEc: ExecutionContext):
 
   private val log = LoggerFactory.getLogger(classOf[JobConsumer])
@@ -123,30 +125,52 @@ final class JobConsumer(
       .map(_ => ())
 
   private def handle(lane: Lane, env: Envelope): Future[Unit] =
-    val work =
-      decode(env.payload) match
-        case Left(error) =>
-          // Terminal: nothing to publish (no job). Route through the SAME pure policy the rest of
-          // the loop obeys — onDecodeFailure ⇒ AckOnly ⇒ ack (no redelivery of poison).
-          log.warn(
-            "Terminal decode failure on {} — acking (no redelivery): {}",
-            lane,
-            error.message
-          )
-          interpret(lane, env, AckPolicy.onDecodeFailure, () => Future.unit)
-        case Right(job) =>
-          safely(pipeline.process(job.descriptor)).flatMap { outcome =>
-            val action = AckPolicy.decide(outcome)
-            if action == AckAction.LeaveUnacked then
-              log.warn("Transient failure for job {} — leaving unacked for redelivery", job.jobId)
-            interpret(lane, env, action, () => publisher.publish(job, outcome))
-          }
-    work.recover { case NonFatal(e) =>
-      // Any failure (publish/ack error, or a synchronous seam throw) leaves the message unacked so
-      // it is redelivered — and, crucially, never propagates out to break the batch or the lane.
-      log.error(s"Handler error on $lane (ackId ${env.ackId}) — leaving unacked", e)
-      ()
+    val laneLabel = laneName(lane)
+    // `time` marks the job in-flight and observes its duration; outcome is recorded once known.
+    recorder.time(laneLabel) {
+      val work =
+        decode(env.payload) match
+          case Left(error) =>
+            // Terminal: nothing to publish (no job). Route through the SAME pure policy the rest of
+            // the loop obeys — onDecodeFailure ⇒ AckOnly ⇒ ack (no redelivery of poison).
+            recorder.recordProcessed(laneLabel, "terminal")
+            log.warn(
+              "Terminal decode failure on {} — acking (no redelivery): {}",
+              lane,
+              error.message
+            )
+            interpret(lane, env, AckPolicy.onDecodeFailure, () => Future.unit)
+          case Right(job) =>
+            safely(pipeline.process(job.descriptor)).flatMap { outcome =>
+              recorder.recordProcessed(laneLabel, outcomeLabel(outcome))
+              val action = AckPolicy.decide(outcome)
+              if action == AckAction.LeaveUnacked then
+                log.warn("Transient failure for job {} — leaving unacked for redelivery", job.jobId)
+              interpret(lane, env, action, () => publisher.publish(job, outcome))
+            }
+      work.recover { case NonFatal(e) =>
+        // Any failure (publish/ack error, or a synchronous seam throw) leaves the message unacked so
+        // it is redelivered — and, crucially, never propagates out to break the batch or the lane.
+        log.error(s"Handler error on $lane (ackId ${env.ackId}) — leaving unacked", e)
+        ()
+      }
     }
+
+  /** The metric label for a lane (a fixed, low-cardinality value). */
+  private def laneName(lane: Lane): String =
+    lane match
+      case Lane.Ingest => "ingest"
+      case Lane.Reprocess => "reprocess"
+
+  /**
+   * The outcome label recorded for a processed job — mirroring the same distinction [[AckPolicy]]
+   * makes: a success, a transient (retriable) failure, or a terminal failure.
+   */
+  private def outcomeLabel(outcome: Either[MediaError, MediaResult]): String =
+    outcome match
+      case Right(_) => "success"
+      case Left(error) if error.retriable => "retriable"
+      case Left(_) => "terminal"
 
   /** Execute a pure [[AckAction]]: publish-then-ack, ack-only, or leave for redelivery. */
   private def interpret(
