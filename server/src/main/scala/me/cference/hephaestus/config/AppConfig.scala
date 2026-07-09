@@ -67,6 +67,12 @@ final case class ConsumerConfig(
     pollInterval: FiniteDuration
 )
 
+/**
+ * Prometheus metrics settings (add-metrics-endpoint). Enabled by default; when disabled, no
+ * `/metrics` route is installed and worker recording is a no-op.
+ */
+final case class MetricsConfig(enabled: Boolean)
+
 /** The fully-resolved, validated application configuration. */
 final case class AppConfig(
     http: HttpConfig,
@@ -74,7 +80,8 @@ final case class AppConfig(
     apollo: ApolloConfig,
     derivatives: DerivativeConfig,
     thresholds: ThresholdConfig,
-    consumer: ConsumerConfig
+    consumer: ConsumerConfig,
+    metrics: MetricsConfig
 )
 
 /**
@@ -96,7 +103,8 @@ object AppConfig:
         derived <- derivativeConfig(config)
         thresh <- thresholdConfig(config)
         consumer <- consumerConfig(config)
-      yield AppConfig(http, hermes, apollo, derived, thresh, consumer)
+        metrics <- metricsConfig(config)
+      yield AppConfig(http, hermes, apollo, derived, thresh, consumer, metrics)
     catch
       case e: ConfigException => Left(ConfigError(e.getMessage))
       case NonFatal(e) => Left(ConfigError(e.getMessage))
@@ -144,6 +152,18 @@ object AppConfig:
       concurrency <- requiredInt(c, s"$Root.consumer.concurrency")
       poll <- requiredDuration(c, s"$Root.consumer.poll-interval")
     yield ConsumerConfig(batch, concurrency, poll)
+
+  /**
+   * Read the metrics toggle; defaults to ENABLED when the key is absent (so a bare config still
+   * loads), and surfaces a malformed value naming the key.
+   */
+  private def metricsConfig(c: Config): Either[ConfigError, MetricsConfig] =
+    val key = s"$Root.metrics.enabled"
+    if !c.hasPath(key) then Right(MetricsConfig(enabled = true))
+    else
+      Try(c.getBoolean(key)).toEither.left
+        .map(e => ConfigError(s"config key $key is not a boolean: ${e.getMessage}"))
+        .map(MetricsConfig.apply)
 
   /** Read a required string; a missing, null, or blank value fails naming the key. */
   private def requiredString(c: Config, key: String): Either[ConfigError, String] =
