@@ -56,16 +56,17 @@ lazy val logbackVersion = "1.5.16"
 ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
   "https://maven.pkg.github.com/vezril/the-lexicon"
 )
-ThisBuild / credentials += Credentials(
-  "GitHub Package Registry",
-  "maven.pkg.github.com",
-  "vezril",
+// Add the env-token credential ONLY when a token is actually present. A blank-password Credentials
+// entry would still match host maven.pkg.github.com and, since Credentials.forHost is first-wins,
+// shadow the ~/.sbt/.credentials fallback below — silently 401ing local dev. (CI always sets
+// LEXICON_TOKEN, so the env cred is still index 0 there.)
+ThisBuild / credentials ++=
   sys.env
     .get("LEXICON_TOKEN")
     .filter(_.nonEmpty)
     .orElse(sys.env.get("GITHUB_TOKEN").filter(_.nonEmpty))
-    .getOrElse("")
-)
+    .map(tok => Credentials("GitHub Package Registry", "maven.pkg.github.com", "vezril", tok))
+    .toSeq
 ThisBuild / credentials ++= {
   val dotCredentials = Path.userHome / ".sbt" / ".credentials"
   if (Files.exists(dotCredentials.toPath)) Seq(Credentials(dotCredentials)) else Seq.empty
