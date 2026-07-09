@@ -39,6 +39,15 @@ object Dimensions:
 enum DerivativeKind:
   case Thumbnail, Sample, Transcode
 
+  /**
+   * The stable wire token §4 stamps onto `Derivative.kind`. Round-trips through the §3 `want`-token
+   * decoder (`JobDecoder.wantKinds`), so a reported kind is one a producer could have requested.
+   */
+  def wireToken: String = this match
+    case Thumbnail => "thumb"
+    case Sample => "sample"
+    case Transcode => "transcode"
+
 /**
  * The pure derivative parameters: output dimensions and the stamped spec version. The `server`
  * `DerivativeConfig`/`ThresholdConfig` map into this so `core` stays free of the config machinery.
