@@ -50,6 +50,10 @@ lazy val pekkoGrpcVersion = "1.1.1"
 lazy val scalaTestVersion = "3.2.19"
 lazy val logbackVersion = "1.5.16"
 lazy val logstashEncoderVersion = "8.0"
+// Prometheus simpleclient (add-metrics-endpoint): the app CollectorRegistry, JVM/process
+// collectors (hotspot), and the text exposition renderer. Pinned to match apollo-storage so the
+// constellation shares one metrics stack. All three artifacts are public (no read:packages token).
+lazy val prometheusVersion = "0.16.0"
 
 // The Apollo gRPC contract is consumed as the published Lexicon stubs, not a local .proto
 // (add-apollo-io). GitHub Packages requires auth even for public reads: use a read:packages
@@ -128,6 +132,11 @@ lazy val server = (project in file("server"))
       // Structured JSON log encoding (LogstashEncoder) for the constellation observability stack
       // (add-structured-logging). Selected at runtime by LOG_FORMAT (see server logback.xml).
       "net.logstash.logback" % "logstash-logback-encoder" % logstashEncoderVersion,
+      // Prometheus metrics (add-metrics-endpoint): app CollectorRegistry + JVM collectors + text
+      // exposition. Same trio (and version) as apollo-storage so the constellation is uniform.
+      "io.prometheus" % "simpleclient" % prometheusVersion,
+      "io.prometheus" % "simpleclient_hotspot" % prometheusVersion,
+      "io.prometheus" % "simpleclient_common" % prometheusVersion,
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
       "org.apache.pekko" %% "pekko-http-testkit" % pekkoHttpVersion % Test,
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test
