@@ -11,15 +11,15 @@ object_api.proto` and Apollo's consumer pattern in `apollo-storage/build.sbt` +
 
 ## 1. Build: converge on Pekko 1.2.0 + consume the Lexicon gRPC client
 
-- [ ] 1.1 Bump `build.sbt` Pekko `1.1.3 → 1.2.0`, pekko-http `1.1.0 → 1.2.0`; add `pekko-discovery`
-      1.2.0 and `pekko-grpc-runtime`. Run the full §0 suite — confirm still green on 1.2.0 (catch
-      any 1.1→1.2 breakage in the existing health/config/probe code).
-- [ ] 1.2 Add the GitHub Packages resolver for `vezril/the-lexicon` + credentials
-      (`LEXICON_TOKEN` then `GITHUB_TOKEN`); depend on `io.codex %% lexicon-grpc % 0.1.0`. Confirm
-      `sbt update` resolves the artifact locally (needs a read:packages token).
-- [ ] 1.3 CI: pass a `read:packages` token to `sbt` in `ci.yml`/`release.yml`/`dev.yml` (a
-      `LEXICON_TOKEN` secret, or reuse the built-in `GITHUB_TOKEN` if it can read the-lexicon
-      packages). Verify a clean CI resolve.
+- [x] 1.1 Bump `build.sbt` Pekko `1.1.3 → 1.2.0`, pekko-http `1.1.0 → 1.2.0`; add `pekko-discovery`
+      1.2.0 and `pekko-grpc-runtime` (1.1.1). §0 core suite verified GREEN locally on 1.2.0; the §0
+      server suite (health/config/probe) verified GREEN via CI (no 1.1→1.2 breakage).
+- [x] 1.2 Added the GitHub Packages resolver for `vezril/the-lexicon` + credentials
+      (`LEXICON_TOKEN` → `GITHUB_TOKEN` → `~/.sbt/.credentials`); depend on
+      `io.codex %% lexicon-grpc % 0.1.0`. NOTE: cannot resolve locally (no read:packages token on
+      this machine) — **resolution + server compile confirmed GREEN in CI**.
+- [x] 1.3 CI: `LEXICON_TOKEN` secret wired into the sbt env of `ci.yml`/`release.yml`/`dev.yml`.
+      Clean CI resolve confirmed (server main + tests compiled against the artifact).
 
 ## 2. Pure helpers (`core`)
 
@@ -36,41 +36,51 @@ object_api.proto` and Apollo's consumer pattern in `apollo-storage/build.sbt` +
 
 ## 3. Apollo client — read original (`server`)
 
-- [ ] 3.1 **Red** (against a mock/in-memory `ObjectApi` server or testcontainer Apollo): `GetObject`
-      returns the header metadata then a `Source[ByteString]`; the streamed bytes reassemble to the
-      original; the computed md5 equals the header md5.
-- [ ] 3.2 **Green**: `readOriginal(bucket, object)` — open the server-stream, split header from
-      chunks, expose `(ObjectMetadata, Source[ByteString])`, backpressured.
-- [ ] 3.3 **Red**: md5 mismatch (header says X, bytes hash to Y) ⇒ **terminal** failure, typed and
-      classified non-retriable; truncated stream ⇒ terminal (edge cases).
-- [ ] 3.4 **Green**: in-stream md5 verification wired into the read; terminal error on mismatch.
+- [x] 3.1 **Red** (in-process stub `ObjectApiPowerApi` server, mirroring apollo-storage's
+      `ObjectApiSpec`): `GetObject` returns header then `Source[ByteString]`; bytes reassemble; md5
+      equals header md5. (`LexiconApolloClientSpec` — GREEN in CI.)
+- [x] 3.2 **Green**: `readOriginal(bucket, object)` — `prefixAndTail(1)` splits header from chunks,
+      exposes `(ObjectMetadata, Source[ByteString])`, backpressured. (`LexiconApolloClient`.)
+- [x] 3.3 **Red**: md5 mismatch ⇒ terminal `ApolloError.Md5Mismatch`; truncated stream ⇒ terminal
+      `ApolloError.Truncated` (both `retriable = false`). (GREEN in CI.)
+- [x] 3.4 **Green**: in-stream md5+size verification via a pass-through `Md5VerifyingStage`
+      `GraphStage`; fails the byte source terminally on mismatch/short-count.
 
 ## 4. Apollo client — write derivative (`server`)
 
-- [ ] 4.1 **Red**: `PutObject` client-stream — send `PutHeader` then chunks from a
-      `Source[ByteString]`; the returned `PutObjectResponse` md5/size match; a re-write at the same
-      content-addressed key returns byte-identical result (idempotent) (edge cases).
-- [ ] 4.2 **Green**: `writeDerivative(bucket, key, contentType, Source[ByteString]) → PutResult`,
-      atomic (commit on stream completion), optional `expected_md5`.
-- [ ] 4.3 **Red**: `headExists(bucket, key)` — present ⇒ metadata; absent ⇒ typed not-found; used
-      for skip-if-present / reprocess overwrite (edge case).
-- [ ] 4.4 **Green**: `HeadObject` wrapper.
+- [x] 4.1 **Red**: `PutObject` client-stream — `PutHeader` then chunks; returned md5/size match; a
+      repeated write is byte-identical (idempotent); a mid-stream failure commits nothing (atomic).
+      (`LexiconApolloClientSpec` — GREEN in CI.)
+- [x] 4.2 **Green**: `writeDerivative(bucket, key, contentType, Source[ByteString], expectedMd5) →
+      PutResult`, atomic (single header-then-chunks source, commit on completion), optional
+      `expected_md5`. (`LexiconApolloClient`.)
+- [x] 4.3 **Red**: `headExists` present ⇒ `Some(metadata)`; absent ⇒ `None` (typed not-found, no
+      leak). (GREEN in CI.)
+- [x] 4.4 **Green**: `HeadObject` wrapper mapping `NOT_FOUND` → `None`.
 
 ## 5. Error classification + client wiring
 
-- [ ] 5.1 **Red**: gRPC status mapping — `UNAVAILABLE`/`DEADLINE_EXCEEDED`/connection refused ⇒
-      **retriable**; `NOT_FOUND`/`FAILED_PRECONDITION` (checksum)/`INVALID_ARGUMENT` ⇒ **terminal**
-      (edge cases). A typed `ApolloError` ADT with a `retriable: Boolean`.
-- [ ] 5.2 **Green**: map `StatusRuntimeException`/stream failures to `ApolloError`; centralize.
-- [ ] 5.3 **Green**: build `GrpcClientSettings` from config (Apollo host/port, deadline); a single
-      injectable `ApolloClient` interface (so the pipeline + tests depend on the interface, not the
-      generated stub). Wire lifecycle into `Main` (create on startup, part of readiness).
+- [x] 5.1 **Red**: gRPC status mapping — `UNAVAILABLE`/`DEADLINE_EXCEEDED` ⇒ retriable;
+      `NOT_FOUND`/`FAILED_PRECONDITION`/`INVALID_ARGUMENT`/unclassified ⇒ terminal. Typed
+      `ApolloError` ADT with `retriable: Boolean`. (`ApolloErrorSpec` — GREEN in CI.)
+- [x] 5.2 **Green**: `ApolloError.classify` centralizes mapping of `StatusRuntimeException`/stream
+      failures (passes an already-typed `ApolloError` through unchanged). (`ApolloError.scala`.)
+- [x] 5.3 **Green**: `ApolloClient.fromConfig` builds `GrpcClientSettings` from config (host/port
+      split from `apollo.endpoint`, `withDeadline`); single injectable `ApolloClient` interface
+      wrapping the generated `ObjectApiClient`; wired into `Main` and released on Coordinated
+      Shutdown. NOTE: readiness is deliberately NOT gated on Apollo reachability (a transient
+      outage is a retriable per-job failure, not service-down) — documented in `Main`.
 
 ## 6. Integration
 
-- [ ] 6.1 **Test**: end-to-end against a real/mock Apollo — write a derivative, read it back,
-      verify md5 round-trips and the content-addressed key is exactly
-      `derivatives/<md5[0:2]>/<md5>/<name>`.
-- [ ] 6.2 **Test**: Apollo unreachable ⇒ retriable `ApolloError` (no crash, no lane wedge); readiness
-      reflects Apollo connectivity if we choose to gate on it.
-- [ ] 6.3 Refactor: extract the client module; run unit + integration suites; scalafmt/scalafix clean.
+- [x] 6.1 **Test**: end-to-end round-trip through the in-process server — `writeDerivative` then
+      `readOriginal`, md5 round-trips. Content-addressed key shape is unit-proven in
+      `StorageKeySpec` (`derivatives/<md5[0:2]>/<md5>/<name>`). (GREEN in CI.)
+- [~] 6.2 **Partial**: `UNAVAILABLE ⇒ retriable` is proven at the classification layer
+      (`ApolloErrorSpec`); a live-unreachable-Apollo integration test and readiness gating are
+      deferred (readiness gating intentionally omitted, see 5.3). No crash/lane-wedge path exists —
+      failures are values (`ApolloError`), not thrown.
+- [x] 6.3 Client kept in the `server` module's `apollo` package (per this change's design — the
+      effectful shell, not a separate module). Unit + in-process suites GREEN in CI; `scalafmtCheckAll`
+      clean. NOTE: `scalafix` not run locally (needs server compile, gated on the Lexicon token); not
+      part of the CI format gate.
