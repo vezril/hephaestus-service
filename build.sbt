@@ -39,8 +39,16 @@ ThisBuild / scalacOptions ++= Seq(
   "-unchecked",
   "-Werror",
   "-Wunused:all",
-  "-Wvalue-discard"
+  "-Wvalue-discard",
+  "-Wnonunit-statement"
 )
+
+// Production code gets the full strict set; tests relax the two discard checks. ScalaTest
+// matchers return `Assertion` and results are routinely used for effect, so -Wnonunit-statement /
+// -Wvalue-discard there is noise that fights the test DSL. Applied per-project below (Test scope
+// delegates to the project's own scalacOptions, not ThisBuild / Test). Mirrors apollo-storage.
+lazy val relaxTestDiscardChecks =
+  Test / scalacOptions --= Seq("-Wnonunit-statement", "-Wvalue-discard")
 
 // SemanticDB so scalafix's rules (DisableSyntax, OrganizeImports) can run as a CI gate
 // via `scalafixAll --check` (add-static-analysis). Mirrors apollo-storage.
@@ -105,6 +113,7 @@ lazy val root = (project in file("."))
 lazy val core = (project in file("core"))
   .settings(
     name := "hephaestus-core",
+    relaxTestDiscardChecks,
     libraryDependencies += "org.scalatest" %% "scalatest" % scalaTestVersion % Test
   )
 
@@ -114,6 +123,7 @@ lazy val server = (project in file("server"))
   .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin)
   .settings(
     name := "hephaestus-server",
+    relaxTestDiscardChecks,
     Compile / mainClass := Some("me.cference.hephaestus.Main"),
     libraryDependencies ++= Seq(
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoVersion,

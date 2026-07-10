@@ -26,6 +26,5 @@ final class HttpServerSpec extends AnyFunSuite with Matchers with BeforeAndAfter
       val result = HttpServer.bind(complete("ok"), "127.0.0.1", port)
       val thrown = intercept[Exception](Await.result(result, 5.seconds))
       thrown.getMessage should not be empty
-    finally
-      val _ = Await.result(first.unbind(), 5.seconds)
+    finally Await.result(first.unbind(), 5.seconds)
   }
