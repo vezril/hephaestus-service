@@ -8,8 +8,8 @@ import me.cference.hephaestus.apollo.{ApolloClient, LexiconApolloClient}
 import me.cference.hephaestus.storage.Md5
 import org.apache.pekko.NotUsed
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import org.apache.pekko.grpc.{GrpcClientSettings, GrpcServiceException}
 import org.apache.pekko.grpc.scaladsl.Metadata
+import org.apache.pekko.grpc.{GrpcClientSettings, GrpcServiceException}
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.model.{HttpRequest, HttpResponse}
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
