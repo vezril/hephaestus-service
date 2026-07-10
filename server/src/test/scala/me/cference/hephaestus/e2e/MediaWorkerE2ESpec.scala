@@ -142,11 +142,14 @@ final class MediaWorkerE2ESpec
     consumer.start()
 
   override def afterAll(): Unit =
-    if consumer != null then Await.ready(consumer.drain(), 30.seconds)
-    if apollo != null then Await.ready(apollo.close(), 15.seconds)
-    if system != null then
-      system.terminate()
-      Await.ready(system.whenTerminated, 30.seconds)
+    // The fields are `uninitialized` until beforeAll runs; Option(...) guards a teardown that
+    // fires before setup completed (e.g. a container failed to start) without a null literal.
+    Option(consumer).foreach(c => Await.ready(c.drain(), 30.seconds))
+    Option(apollo).foreach(a => Await.ready(a.close(), 15.seconds))
+    Option(system).foreach { s =>
+      s.terminate()
+      Await.ready(s.whenTerminated, 30.seconds)
+    }
     containers.stop()
 
   // --- helpers ---------------------------------------------------------------

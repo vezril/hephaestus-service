@@ -20,30 +20,30 @@ import scala.util.control.NonFatal
 sealed abstract class ApolloError(
     message: String,
     val retriable: Boolean,
-    cause: Throwable | Null = null
+    cause: Option[Throwable] = None
 ) extends RuntimeException(message):
-  if cause != null then initCause(cause)
+  cause.foreach(initCause)
 
 object ApolloError:
 
   /** Apollo is unreachable or returned a transient status — safe to retry. */
-  final case class Unavailable(op: String, detail: String, source: Throwable | Null = null)
+  final case class Unavailable(op: String, detail: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: unavailable — $detail", retriable = true, source)
 
   /** The per-call deadline elapsed — safe to retry. */
-  final case class DeadlineExceeded(op: String, source: Throwable | Null = null)
+  final case class DeadlineExceeded(op: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: deadline exceeded", retriable = true, source)
 
   /** Object or bucket does not exist — terminal. */
-  final case class NotFound(op: String, detail: String, source: Throwable | Null = null)
+  final case class NotFound(op: String, detail: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: not found — $detail", retriable = false, source)
 
   /** A precondition (e.g. checksum) failed — terminal. */
-  final case class FailedPrecondition(op: String, detail: String, source: Throwable | Null = null)
+  final case class FailedPrecondition(op: String, detail: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: failed precondition — $detail", retriable = false, source)
 
   /** A malformed request argument — terminal. */
-  final case class InvalidArgument(op: String, detail: String, source: Throwable | Null = null)
+  final case class InvalidArgument(op: String, detail: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: invalid argument — $detail", retriable = false, source)
 
   /**
@@ -67,23 +67,23 @@ object ApolloError:
       extends ApolloError(s"apollo $op: protocol error — $detail", retriable = false)
 
   /** An unclassified failure — conservatively terminal (do not hammer on unknown errors). */
-  final case class Unexpected(op: String, detail: String, source: Throwable | Null = null)
+  final case class Unexpected(op: String, detail: String, source: Option[Throwable] = None)
       extends ApolloError(s"apollo $op: unexpected — $detail", retriable = false, source)
 
   /** Map any failure raised by a client call/stream to a typed `ApolloError` for the given op. */
   def classify(op: String, t: Throwable): ApolloError = t match
     case e: ApolloError => e
     case e: StatusRuntimeException => fromStatus(op, e)
-    case NonFatal(e) => Unexpected(op, Option(e.getMessage).getOrElse(e.getClass.getName), e)
+    case NonFatal(e) => Unexpected(op, Option(e.getMessage).getOrElse(e.getClass.getName), Some(e))
     case fatal => throw fatal
 
   private def fromStatus(op: String, e: StatusRuntimeException): ApolloError =
     val status = e.getStatus
     val detail = Option(status.getDescription).filter(_.nonEmpty).getOrElse(status.getCode.toString)
     status.getCode match
-      case Status.Code.UNAVAILABLE => Unavailable(op, detail, e)
-      case Status.Code.DEADLINE_EXCEEDED => DeadlineExceeded(op, e)
-      case Status.Code.NOT_FOUND => NotFound(op, detail, e)
-      case Status.Code.FAILED_PRECONDITION => FailedPrecondition(op, detail, e)
-      case Status.Code.INVALID_ARGUMENT => InvalidArgument(op, detail, e)
-      case other => Unexpected(op, s"$other: $detail", e)
+      case Status.Code.UNAVAILABLE => Unavailable(op, detail, Some(e))
+      case Status.Code.DEADLINE_EXCEEDED => DeadlineExceeded(op, Some(e))
+      case Status.Code.NOT_FOUND => NotFound(op, detail, Some(e))
+      case Status.Code.FAILED_PRECONDITION => FailedPrecondition(op, detail, Some(e))
+      case Status.Code.INVALID_ARGUMENT => InvalidArgument(op, detail, Some(e))
+      case other => Unexpected(op, s"$other: $detail", Some(e))

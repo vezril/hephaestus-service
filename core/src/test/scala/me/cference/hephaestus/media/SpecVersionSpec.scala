@@ -28,7 +28,9 @@ final class SpecVersionSpec extends AnyFunSuite with Matchers:
   }
 
   test("a null value is a typed error") {
-    SpecVersion.parse(null).isLeft shouldBe true
+    // Deliberately exercises the null-input defense (parse accepts a raw String that may arrive
+    // null from Java/deserialization) — a literal null is the point of the test here.
+    SpecVersion.parse(null).isLeft shouldBe true // scalafix:ok DisableSyntax.null
   }
 
   test("a zero or negative version is rejected (must be >= 1)") {

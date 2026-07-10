@@ -45,6 +45,6 @@ object JobDecoder:
       case _ => None
 
   private def required(value: String, field: String): Either[DecodeError, String] =
-    if value == null || value.trim.isEmpty then
+    if Option(value).forall(_.trim.isEmpty) then
       Left(DecodeError(s"missing or blank required field: $field"))
     else Right(value)

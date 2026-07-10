@@ -13,7 +13,7 @@ final case class SpecVersionError(message: String)
 object SpecVersion:
 
   def parse(raw: String): Either[SpecVersionError, Int] =
-    val trimmed = if raw == null then "" else raw.trim
+    val trimmed = Option(raw).map(_.trim).getOrElse("")
     trimmed.toIntOption match
       case Some(n) if n >= 1 => Right(n)
       case Some(_) => Left(SpecVersionError(s"derivative spec-version must be >= 1: '$raw'"))

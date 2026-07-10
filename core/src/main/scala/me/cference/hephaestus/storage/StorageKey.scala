@@ -38,13 +38,14 @@ object StorageKey:
   private def shard(md5: String): String = md5.substring(0, 2)
 
   private def validateMd5(md5: String): Either[KeyError, String] =
-    if md5 == null || md5.isEmpty then Left(KeyError("md5 is empty"))
+    if Option(md5).forall(_.isEmpty) then Left(KeyError("md5 is empty"))
     else if Md5Pattern.matches(md5) then Right(md5)
     else Left(KeyError(s"md5 is not 32 lowercase hex chars: '$md5'"))
 
   private def normalizedExt(ext: String): Either[KeyError, String] =
-    val trimmed = if ext == null then "" else ext.stripPrefix(".").trim
+    val trimmed = Option(ext).map(_.stripPrefix(".").trim).getOrElse("")
     if trimmed.isEmpty then Left(KeyError("extension is blank")) else Right(trimmed)
 
   private def nonBlank(value: String, label: String): Either[KeyError, String] =
-    if value == null || value.trim.isEmpty then Left(KeyError(s"$label is blank")) else Right(value)
+    if Option(value).forall(_.trim.isEmpty) then Left(KeyError(s"$label is blank"))
+    else Right(value)

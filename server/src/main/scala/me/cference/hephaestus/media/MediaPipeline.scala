@@ -232,12 +232,12 @@ final class MediaPipeline(
       }
 
   private def causeChain(t: Throwable): List[Throwable] =
-    val seen = scala.collection.mutable.ListBuffer.empty[Throwable]
-    var current: Throwable | Null = t
-    while current != null && !seen.contains(current) do
-      seen += current
-      current = current.getCause
-    seen.toList
+    @scala.annotation.tailrec
+    def loop(current: Option[Throwable], seen: List[Throwable]): List[Throwable] =
+      current match
+        case Some(c) if !seen.contains(c) => loop(Option(c.getCause), c :: seen)
+        case _ => seen.reverse
+    loop(Option(t), Nil)
 
   private def deleteRecursively(dir: Path): Unit =
     try

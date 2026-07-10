@@ -41,6 +41,11 @@ ThisBuild / scalacOptions ++= Seq(
   "-Wunused:all"
 )
 
+// SemanticDB so scalafix's rules (DisableSyntax, OrganizeImports) can run as a CI gate
+// via `scalafixAll --check` (add-static-analysis). Mirrors apollo-storage.
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
+
 // Converged on Pekko 1.2.0: the Lexicon gRPC stubs (and Apollo) are built there,
 // and Pekko forbids a mixed-version classpath (add-apollo-io / hephaestus-pekko-convergence).
 lazy val pekkoVersion = "1.2.0"
