@@ -38,7 +38,8 @@ ThisBuild / scalacOptions ++= Seq(
   "-feature",
   "-unchecked",
   "-Werror",
-  "-Wunused:all"
+  "-Wunused:all",
+  "-Wvalue-discard"
 )
 
 // SemanticDB so scalafix's rules (DisableSyntax, OrganizeImports) can run as a CI gate
