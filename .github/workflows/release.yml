@@ -93,6 +93,25 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: sbt -batch server/Docker/publishLocal
 
+      # Image CVE scan (add-static-analysis). The shipped image bundles ffmpeg + libvips, a
+      # real CVE surface, so the built image is scanned before it is pushed. Report mode for
+      # now (exit-code 0) — Dependabot + this surfaced report drive remediation; flip exit-code
+      # to 1 to gate the release on CRITICAL/HIGH once the base image is on a clean footing.
+      - name: Compute scanned image ref
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "SCAN_IMAGE=$DOCKERHUB_USERNAME/$IMAGE_NAME:${REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Scan image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          image-ref: ${{ env.SCAN_IMAGE }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0" # report only — does not fail the release yet
+
       - name: Tag and push X.Y.Z + latest
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}

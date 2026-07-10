@@ -10,5 +10,10 @@ addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.4")
 // Static analysis / linting (OrganizeImports + DisableSyntax).
 addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.13.0")
 
+// Test coverage (add-static-analysis): CI reports it; add a `coverageMinimumStmtTotal := N`
+// gate in build.sbt once the suite is mature — a gate now would red the build on an immature
+// suite. Version pinned to the new-scala-service template so the constellation stays uniform.
+addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.0.12")
+
 // Build-time version info exposed to the app (health endpoint reports version).
 addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.12.0")

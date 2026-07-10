@@ -1,0 +1,19 @@
+version: 2
+
+# Dependency + CVE feed (add-static-analysis). Dependabot opens PRs for outdated sbt
+# libraries and pinned GitHub Actions, and surfaces the associated security advisories.
+updates:
+  # sbt/Scala library dependencies (build.sbt + project/*.sbt).
+  - package-ecosystem: sbt
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The SHA-pinned actions used across the workflows (checkout, setup-java, cache,
+  # docker/login, trivy, …) — keeps the pins current without losing SHA pinning.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
