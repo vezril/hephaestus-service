@@ -18,7 +18,7 @@ object ToolRunner:
     Try {
       val output = new StringBuilder
       val logger = ProcessLogger { line =>
-        output.append(line).append('\n'); ()
+        val _ = output.append(line).append('\n')
       }
       val exit = Process(cmd).!(logger)
       if exit == 0 then output.toString

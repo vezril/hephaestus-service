@@ -14,8 +14,8 @@ object ProcessCommandRunner:
     val out = new StringBuilder
     val err = new StringBuilder
     val logger = ProcessLogger(
-      line => { out.append(line).append('\n'); () },
-      line => { err.append(line).append('\n'); () }
+      line => { val _ = out.append(line).append('\n') },
+      line => { val _ = err.append(line).append('\n') }
     )
     // Process(Seq) execs the argv directly (no shell interpretation of the elements).
     val exit = Process(argv).!(logger)

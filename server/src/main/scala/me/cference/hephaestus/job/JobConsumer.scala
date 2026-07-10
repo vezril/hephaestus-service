@@ -107,7 +107,7 @@ final class JobConsumer(
       // The typed Scheduler's FiniteDuration overload takes the ExecutionContext implicitly (the
       // 3-arg explicit overload wants a java.time.Duration); processingEc is the in-scope given.
       val runnable: Runnable = () => p.completeWith(next)
-      system.scheduler.scheduleOnce(settings.pollInterval, runnable)(using processingEc)
+      val _ = system.scheduler.scheduleOnce(settings.pollInterval, runnable)(using processingEc)
       p.future
 
   // --- per-batch / per-message ----------------------------------------------
