@@ -53,8 +53,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg libvips-tools
       - name: Compile
         run: sbt -batch compile Test/compile
-      - name: Test
-        run: sbt -batch test
+      - name: Test (with coverage)
+        # scoverage (add-static-analysis): coverage is REPORTED, not gated — add
+        # `coverageMinimumStmtTotal := N` in build.sbt to enforce a floor once the suite is
+        # mature. `clean` forces an instrumented recompile so the report is accurate.
+        run: sbt -batch clean coverage test coverageReport
 
   # sbt-dynver sanity: an untagged commit must yield a snapshot (non-releasable)
   # version so releases can only come from an explicit tag.
@@ -74,3 +77,20 @@ jobs:
             *SNAPSHOT*|*-*-*) echo "OK: snapshot version" ;;
             *) echo "ERROR: untagged build produced a clean release version '$VERSION'"; exit 1 ;;
           esac
+
+  # Secret scanning — fail the PR if a credential was committed (language-agnostic).
+  # Mirrors the new-scala-service template exactly (curl-installed, version-pinned gitleaks
+  # binary + `gitleaks detect`) so every constellation service scans identically.
+  secrets-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # scan full history
+      - name: gitleaks
+        run: |
+          V=8.18.4
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+            | tar xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --verbose
