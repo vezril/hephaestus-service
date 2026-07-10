@@ -95,7 +95,18 @@ jobs:
           fetch-depth: 0 # scan full history
       - name: gitleaks
         run: |
+          set -euo pipefail
           V=8.18.4
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
-            | tar xz -C /tmp gitleaks
+          TARBALL="gitleaks_${V}_linux_x64.tar.gz"
+          # Verify the release tarball against gitleaks' published checksums before extracting —
+          # a compromised release asset must not run unverified in CI. Keep the tarball's original
+          # name so its checksums.txt entry matches (--ignore-missing skips the *other* platforms'
+          # entries, but the linux_x64 one is present and IS verified).
+          curl -sSL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${V}/${TARBALL}"
+          curl -sSL -o checksums.txt \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_checksums.txt"
+          grep -q " ${TARBALL}\$" checksums.txt # fail loudly if the expected entry is absent
+          sha256sum --ignore-missing -c checksums.txt
+          tar xz -C /tmp -f "$TARBALL" gitleaks
           /tmp/gitleaks detect --source . --redact --verbose
