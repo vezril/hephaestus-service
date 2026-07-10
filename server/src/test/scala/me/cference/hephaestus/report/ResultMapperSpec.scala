@@ -26,10 +26,10 @@ final class ResultMapperSpec extends AnyFunSuite with Matchers with OptionValues
     )
 
   private def roundTrips(msg: pb.MediaProcessed): Unit =
-    val _ = JsonFormat.fromJsonString[pb.MediaProcessed](JsonFormat.toJsonString(msg)) shouldBe msg
+    JsonFormat.fromJsonString[pb.MediaProcessed](JsonFormat.toJsonString(msg)) shouldBe msg
 
   private def roundTrips(msg: pb.MediaFailed): Unit =
-    val _ = JsonFormat.fromJsonString[pb.MediaFailed](JsonFormat.toJsonString(msg)) shouldBe msg
+    JsonFormat.fromJsonString[pb.MediaFailed](JsonFormat.toJsonString(msg)) shouldBe msg
 
   test("image thumb-only: absent optionals, single thumb derivative, status ok") {
     val meta = MediaMetadata(800, 600, None, None, 2048L, "a" * 32, "png", None)
