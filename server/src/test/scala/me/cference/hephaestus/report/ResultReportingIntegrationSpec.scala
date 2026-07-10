@@ -13,8 +13,8 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import scalapb.json4s.JsonFormat
 
 import scala.collection.mutable
-import scala.concurrent.duration.*
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.*
 
 /**
  * End-to-end closure of the reporting loop: the REAL §3 [[JobConsumer]] driving the REAL §2

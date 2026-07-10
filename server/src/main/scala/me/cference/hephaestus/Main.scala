@@ -1,5 +1,6 @@
 package me.cference.hephaestus
 
+import com.typesafe.config.ConfigFactory
 import me.cference.hephaestus.apollo.ApolloClient
 import me.cference.hephaestus.build.BuildInfo
 import me.cference.hephaestus.config.{AppConfig, ConfigError}
@@ -13,7 +14,6 @@ import me.cference.hephaestus.media.{
 }
 import me.cference.hephaestus.metrics.{MetricsRecorder, MetricsRegistry, PrometheusMetricsRecorder}
 import me.cference.hephaestus.report.{HermesResultPublisher, HermesResultSink}
-import com.typesafe.config.ConfigFactory
 import me.cference.hermesmq.client.HermesClient
 import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.scaladsl.Behaviors

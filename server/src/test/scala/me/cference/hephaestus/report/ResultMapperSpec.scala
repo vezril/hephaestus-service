@@ -3,9 +3,9 @@ package me.cference.hephaestus.report
 import codex.messages.v1 as pb
 import me.cference.hephaestus.job.DecodedJob
 import me.cference.hephaestus.media.*
-import org.scalatest.{EitherValues, OptionValues}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
+import org.scalatest.{EitherValues, OptionValues}
 import scalapb.json4s.JsonFormat
 
 /**

@@ -17,11 +17,11 @@ import me.cference.hephaestus.report.{HermesResultPublisher, HermesResultSink}
 import me.cference.hephaestus.storage.StorageKey
 import me.cference.hermesmq.client.{HermesClient, ReceivedMessage}
 import me.cference.hermesmq.domain.{SubscriptionId, TopicId}
+import org.apache.pekko.NotUsed
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ActorSystem, DispatcherSelector}
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.stream.scaladsl.FileIO
-import org.apache.pekko.NotUsed
 import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Seconds, Span}
