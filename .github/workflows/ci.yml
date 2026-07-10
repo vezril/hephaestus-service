@@ -53,6 +53,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg libvips-tools
       - name: Compile
         run: sbt -batch compile Test/compile
+      # scalafix as a CI gate (add-static-analysis): the configured rules (DisableSyntax,
+      # OrganizeImports) now fail the build. Runs on the SemanticDB emitted by the compile
+      # step above, before the coverage step's `clean` wipes it.
+      - name: Scalafix (check)
+        run: sbt -batch "scalafixAll --check"
       - name: Test (with coverage)
         # scoverage (add-static-analysis): coverage is REPORTED, not gated — add
         # `coverageMinimumStmtTotal := N` in build.sbt to enforce a floor once the suite is

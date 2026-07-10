@@ -41,4 +41,4 @@ object MediaType:
     else None
 
   private def normalize(s: String): String =
-    if s == null then "" else s.trim.toLowerCase
+    Option(s).map(_.trim.toLowerCase).getOrElse("")
